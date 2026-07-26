@@ -1,0 +1,27 @@
+# DevEco Studio
+.idea/
+*.iml
+local.properties
+
+# Build output
+**/build/
+.hvigor/
+
+# Dependencies
+oh_modules/
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Certificates & keys (keep private)
+*.p12
+*.p7b
+*.csr
+*.jks
+*.cer
+
+# Temp
+*.log
+*.tmp
