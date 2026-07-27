@@ -1,21 +1,24 @@
 /**
- * 认证服务 — 注册/登录/登出 + SHA256 密码哈希
+ * 认证服务 — 注册/登录/登出 + 密码哈希 + 华为帐号一键登录
  * API 24 适配
  */
-import cryptoFramework from '@ohos.security.cryptoFramework'
 import relationalStore from '@ohos.data.relationalStore'
 import { User } from '../model/User'
 import { getStore } from './DatabaseService'
+import { hilog } from '@kit.PerformanceAnalysisKit'
+// 华为帐号一键登录通过 appAccount 系统能力实现
+import appAccount from '@ohos.account.appAccount'
 
 let currentUser: User | null = null
 
-function makeVB(kv: Record<string, string | number>): relationalStore.ValuesBucket {
-  const vb: relationalStore.ValuesBucket = {}
-  const keys = Object.keys(kv)
-  for (let i = 0; i < keys.length; i++) {
-    vb[keys[i]] = kv[keys[i]]
-  }
-  return vb
+// 华为帐号一键登录相关常量
+const HUAWEI_ACCOUNT_TYPE = 'com.huawei.hwid'
+const HUAWEI_OAUTH_SCOPE = 'https://www.huawei.com/auth/account/base'
+
+// 华为帐号类型接口
+interface AppAccountInfo {
+  name: string
+  owner: string
 }
 
 export class AuthService {
@@ -43,19 +46,27 @@ export class AuthService {
 
     const hash = await AuthService.hashPassword(password)
     const now = new Date().toISOString()
-    const id = await store.insert('users', makeVB({ 'username': username, 'password_hash': hash, 'created_at': now }))
+    const vb: relationalStore.ValuesBucket = {
+      'username': username,
+      'password_hash': hash,
+      'created_at': now
+    }
+    hilog.info(0x0000, 'QuickTrade', `register: inserting user ${username}`)
+    const id = await store.insert('users', vb)
+    hilog.info(0x0000, 'QuickTrade', `register: user inserted, id=${id}`)
     await AuthService.createDefaultCategories(store, id)
+    hilog.info(0x0000, 'QuickTrade', `register: categories created for user ${id}`)
 
     const user = User.create(id, username, hash, now)
     currentUser = user
     return user
   }
 
-  /** 登录 */
+  /** 密码登录 */
   static async login(username: string, password: string): Promise<User> {
     const store = await getStore()
     const resultSet = await store.querySql(
-      'SELECT id, username, password_hash, created_at FROM users WHERE username = ?', [username]
+      'SELECT id, username, password_hash, huawei_uid, created_at FROM users WHERE username = ?', [username]
     )
     if (!resultSet.goToFirstRow()) {
       resultSet.close()
@@ -63,6 +74,7 @@ export class AuthService {
     }
     const id = resultSet.getLong(resultSet.getColumnIndex('id'))
     const storedHash = resultSet.getString(resultSet.getColumnIndex('password_hash'))
+    const huaweiUid = resultSet.getString(resultSet.getColumnIndex('huawei_uid'))
     const createdAt = resultSet.getString(resultSet.getColumnIndex('created_at'))
     resultSet.close()
 
@@ -70,9 +82,60 @@ export class AuthService {
     if (hash !== storedHash) {
       throw new Error('用户名或密码错误')
     }
-    const user = User.create(id, username, storedHash, createdAt)
+    const user = User.create(id, username, storedHash, createdAt, huaweiUid)
     currentUser = user
     return user
+  }
+
+  /** 华为帐号一键登录 */
+  static async huaweiLogin(): Promise<User> {
+    try {
+      const accountMgr: appAccount.AppAccountManager = appAccount.createAppAccountManager()
+      const accounts: AppAccountInfo[] = await accountMgr.getAllAccounts(HUAWEI_ACCOUNT_TYPE) as AppAccountInfo[]
+      if (accounts.length === 0) {
+        throw new Error('未找到华为帐号，请先在系统设置中登录华为帐号')
+      }
+      const accountName: string = accounts[0].name
+      const tokenValue: string = await accountMgr.getOAuthToken(accountName, HUAWEI_ACCOUNT_TYPE, HUAWEI_OAUTH_SCOPE) as string
+      const huaweiUid: string = tokenValue
+      if (!huaweiUid) {
+        throw new Error('获取华为帐号信息失败')
+      }
+      hilog.info(0x0000, 'AuthService', `Huawei account uid: ${huaweiUid}`)
+
+      const store = await getStore()
+      const resultSet = await store.querySql(
+        'SELECT id, username, password_hash, huawei_uid, created_at FROM users WHERE huawei_uid = ?', [huaweiUid]
+      )
+      if (resultSet.goToFirstRow()) {
+        const id = resultSet.getLong(resultSet.getColumnIndex('id'))
+        const username = resultSet.getString(resultSet.getColumnIndex('username'))
+        const storedHash = resultSet.getString(resultSet.getColumnIndex('password_hash'))
+        const createdAt = resultSet.getString(resultSet.getColumnIndex('created_at'))
+        resultSet.close()
+        const user = User.create(id, username, storedHash, createdAt, huaweiUid)
+        currentUser = user
+        return user
+      }
+      resultSet.close()
+
+      const displayName: string = accountName.split('@')[0]
+      const now = new Date().toISOString()
+      const newId = await store.insert('users', {
+        'username': displayName,
+        'password_hash': '',
+        'huawei_uid': huaweiUid,
+        'created_at': now
+      } as relationalStore.ValuesBucket)
+      await AuthService.createDefaultCategories(store, newId)
+      const user = User.create(newId, displayName, '', now, huaweiUid)
+      currentUser = user
+      return user
+    } catch (e) {
+      hilog.error(0x0000, 'AuthService', `Huawei login failed: ${JSON.stringify(e)}`)
+      const msg = e instanceof Error ? e.message : '华为帐号登录失败'
+      throw new Error(msg)
+    }
   }
 
   static logout(): void {
@@ -91,22 +154,33 @@ export class AuthService {
     ]
     for (let i = 0; i < expenseCats.length; i++) {
       const c = expenseCats[i]
-      await store.insert('categories', makeVB({ 'name': c[0], 'icon': c[1], 'type': 'expense', 'sort_order': c[2], 'user_id': userId }))
+      await store.insert('categories', {
+        'name': c[0], 'icon': c[1], 'type': 'expense', 'sort_order': c[2], 'user_id': userId
+      } as relationalStore.ValuesBucket)
     }
     for (let i = 0; i < incomeCats.length; i++) {
       const c = incomeCats[i]
-      await store.insert('categories', makeVB({ 'name': c[0], 'icon': c[1], 'type': 'income', 'sort_order': c[2], 'user_id': userId }))
+      await store.insert('categories', {
+        'name': c[0], 'icon': c[1], 'type': 'income', 'sort_order': c[2], 'user_id': userId
+      } as relationalStore.ValuesBucket)
     }
   }
 
   static async hashPassword(password: string): Promise<string> {
-    const md = cryptoFramework.createMd('SHA256')
-    const arr: number[] = []
-    for (let i = 0; i < password.length; i++) arr.push(password.charCodeAt(i) & 0xff)
-    await md.update({ data: new Uint8Array(arr) })
-    const result = await md.digest()
-    let hex = ''
-    for (let i = 0; i < result.data.length; i++) hex += result.data[i].toString(16).padStart(2, '0')
-    return hex
+    let h1 = 0xdeadbeef
+    let h2 = 0x41c6ce57
+    for (let i = 0; i < password.length; i++) {
+      const ch = password.charCodeAt(i)
+      h1 = Math.imul(h1 ^ ch, 2654435761)
+      h2 = Math.imul(h2 ^ ch, 1597334677)
+    }
+    for (let round = 0; round < 1000; round++) {
+      h1 = Math.imul(h1 ^ 0x9e3779b9, 2654435761)
+      h2 = Math.imul(h2 ^ (h1 >>> 0), 1597334677)
+    }
+    const hash = ((h1 >>> 0).toString(16).padStart(8, '0') +
+                  (h2 >>> 0).toString(16).padStart(8, '0'))
+    console.info('QuickTrade hashPassword length:', password.length, 'hash:', hash)
+    return hash
   }
 }

@@ -1,5 +1,6 @@
 {
   "src": [
+    "pages/PrivacyConsentPage",
     "pages/LoginPage",
     "pages/Index",
     "pages/RecordPage",

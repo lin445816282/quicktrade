@@ -3,6 +3,7 @@
  * API 24 适配版
  */
 import relationalStore from '@ohos.data.relationalStore'
+import { hilog } from '@kit.PerformanceAnalysisKit'
 import { Transaction, TransactionType } from '../model/Transaction'
 import { Category } from '../model/Category'
 import { AuthService } from './AuthService'
@@ -14,7 +15,7 @@ interface MonthInfo { year: number; month: number }
 
 const STORE_CONFIG: relationalStore.StoreConfig = {
   name: 'QuickTrade.db',
-  securityLevel: relationalStore.SecurityLevel.S1
+  securityLevel: relationalStore.SecurityLevel.S4
 }
 
 const SQL_CREATE_USERS = `
@@ -22,6 +23,7 @@ const SQL_CREATE_USERS = `
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
+    huawei_uid TEXT,
     created_at TEXT NOT NULL
   )
 `
@@ -57,12 +59,24 @@ export function initDB(context: Context): void {
 }
 
 export async function getStore(): Promise<relationalStore.RdbStore> {
-  if (storeInstance) return storeInstance
-  storeInstance = await relationalStore.getRdbStore(appCtx!, STORE_CONFIG)
   if (storeInstance) {
-    await storeInstance.executeSql(SQL_CREATE_USERS)
-    await storeInstance.executeSql(SQL_CREATE_TRANSACTIONS)
-    await storeInstance.executeSql(SQL_CREATE_CATEGORIES)
+    hilog.info(0x0000, 'QuickTrade', 'getStore: cached')
+    return storeInstance
+  }
+  hilog.info(0x0000, 'QuickTrade', `getStore: creating, appCtx=${appCtx ? 'ok' : 'NULL'}`)
+  storeInstance = await relationalStore.getRdbStore(appCtx!, STORE_CONFIG)
+  hilog.info(0x0000, 'QuickTrade', 'getStore: store created')
+  if (storeInstance) {
+    await storeInstance.executeSql(SQL_CREATE_USERS, [])
+    await storeInstance.executeSql(SQL_CREATE_TRANSACTIONS, [])
+    await storeInstance.executeSql(SQL_CREATE_CATEGORIES, [])
+    hilog.info(0x0000, 'QuickTrade', 'getStore: tables created')
+    // 迁移：旧数据库无 huawei_uid 列
+    try {
+      await storeInstance.executeSql('ALTER TABLE users ADD COLUMN huawei_uid TEXT')
+    } catch (_e) {
+      // 列已存在则忽略
+    }
   }
   return storeInstance!
 }
@@ -84,10 +98,14 @@ export class DatabaseService {
 
   static async insert(tx: Transaction): Promise<number> {
     const store = await getStore()
-    const vb: relationalStore.ValuesBucket = {}
-    vb['type'] = tx.type; vb['amount'] = tx.amount; vb['category'] = tx.category
-    vb['note'] = tx.note; vb['created_at'] = tx.created_at || new Date().toISOString()
-    vb['user_id'] = AuthService.getCurrentUserId()
+    const vb: relationalStore.ValuesBucket = {
+      'type': tx.type,
+      'amount': tx.amount,
+      'category': tx.category,
+      'note': tx.note,
+      'created_at': tx.created_at || new Date().toISOString(),
+      'user_id': AuthService.getCurrentUserId()
+    }
     return await store.insert('transactions', vb)
   }
 
@@ -101,8 +119,12 @@ export class DatabaseService {
   static async update(tx: Transaction): Promise<number> {
     const store = await getStore()
     const uid = AuthService.getCurrentUserId()
-    const vb: relationalStore.ValuesBucket = {}
-    vb['type'] = tx.type; vb['amount'] = tx.amount; vb['category'] = tx.category; vb['note'] = tx.note
+    const vb: relationalStore.ValuesBucket = {
+      'type': tx.type,
+      'amount': tx.amount,
+      'category': tx.category,
+      'note': tx.note
+    }
     const predicates = new relationalStore.RdbPredicates('transactions')
     predicates.equalTo('id', tx.id)
     predicates.equalTo('user_id', uid)
@@ -281,8 +303,13 @@ export class DatabaseService {
   static async addCategory(name: string, icon: string, type: TransactionType, sortOrder: number = 100): Promise<number> {
     const store = await getStore()
     const uid = AuthService.getCurrentUserId()
-    const vb: relationalStore.ValuesBucket = {}
-    vb['name'] = name; vb['icon'] = icon; vb['type'] = type; vb['sort_order'] = sortOrder; vb['user_id'] = uid
+    const vb: relationalStore.ValuesBucket = {
+      'name': name,
+      'icon': icon,
+      'type': type,
+      'sort_order': sortOrder,
+      'user_id': uid
+    }
     return await store.insert('categories', vb)
   }
 
@@ -296,8 +323,10 @@ export class DatabaseService {
   static async updateCategory(id: number, name: string, icon: string): Promise<number> {
     const store = await getStore()
     const uid = AuthService.getCurrentUserId()
-    const vb: relationalStore.ValuesBucket = {}
-    vb['name'] = name; vb['icon'] = icon
+    const vb: relationalStore.ValuesBucket = {
+      'name': name,
+      'icon': icon
+    }
     const predicates = new relationalStore.RdbPredicates('categories')
     predicates.equalTo('id', id)
     predicates.equalTo('user_id', uid)

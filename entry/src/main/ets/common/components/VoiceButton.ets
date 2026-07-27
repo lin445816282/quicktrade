@@ -1,140 +1,111 @@
 /**
- * 语音按钮组件
- * 按住说话 → 松手 → ASR 识别 → AI 解析 → 回调结果
+ * 语音按钮 — 懒加载 ASR，触摸正常后恢复完整功能
  */
-import { VoiceService } from '../../service/VoiceService'
-import { AIService } from '../../service/AIService'
 import { AIParseResult } from '../../model/AIParseResult'
 
-/** 语音按钮状态 */
-enum VoiceState {
-  IDLE = 'idle',             // 待命
-  LISTENING = 'listening',   // 正在听
-  RECOGNIZING = 'recognizing', // 识别中
-  PARSING = 'parsing'        // AI 解析中
-}
-
-@ComponentV2
+@Component
 export struct VoiceButton {
-  @Param size: number = 80
-  @Event onResult?: (result: AIParseResult) => void
-  @Event onError?: (message: string) => void
+  onResult?: (result: AIParseResult) => void
+  onError?: (message: string) => void
 
-  @Local state: VoiceState = VoiceState.IDLE
-  @Local scaleValue: number = 1.0
-  @Local pulseOpacity: number = 0
+  @State listening: boolean = false
+  @State statusText: string = '按住说话'
+  private voiceService: Object | null = null
+  private pressed: boolean = false
+  private timer: number = -1
+  private initialized: boolean = false
 
-  private voiceService: VoiceService = new VoiceService()
+  async initService(): Promise<boolean> {
+    if (this.initialized) return true
+    try {
+      const mod = await import('../../service/VoiceService')
+      this.voiceService = new mod.VoiceService()
+      this.initialized = true
+      return true
+    } catch (e) {
+      const err = e as Record<string, string>
+      const msg = err.message || 'unknown'
+      console.error('[VoiceButton] ASR init failed: ' + msg)
+      return false
+    }
+  }
 
-  /** 按住开始录音 */
-  private async onPressStart(): Promise<void> {
-    this.state = VoiceState.LISTENING
-    this.scaleValue = 1.15
-    this.pulseOpacity = 0.6
+  onDown(): void {
+    this.pressed = true
+    this.timer = setTimeout(async () => {
+      if (!this.pressed) return
+      const ok = await this.initService()
+      if (!ok) {
+        this.pressed = false
+        this.statusText = '按住说话'
+        if (this.onError) this.onError('语音模块加载失败')
+        return
+      }
+      this.listening = true
+      this.statusText = '正在听...'
+      try {
+        const vs = this.voiceService as Record<string, Function>
+        await vs['startListening']()
+      } catch (e) {
+        const err = e as Record<string, string>
+        const msg = err.message || err.name || 'unknown error'
+        console.error('[VoiceButton] start failed: ' + msg)
+        this.reset()
+        if (this.onError) this.onError('录音启动失败: ' + msg)
+      }
+    }, 200)
+  }
+
+  async onUp(): Promise<void> {
+    this.pressed = false
+    clearTimeout(this.timer)
+    if (!this.listening) return
+    this.listening = false
+    this.statusText = '识别中...'
 
     try {
-      await this.voiceService.startListening()
-    } catch (err) {
-      console.error(`[VoiceButton] 录音启动失败: ${err}`)
-      this.state = VoiceState.IDLE
-      this.scaleValue = 1.0
-      this.pulseOpacity = 0
-      this.onError?.('麦克风权限未授权或在模拟器上')
+      const vs2 = this.voiceService as Record<string, Function>
+      const text: string = await vs2['stopListening']() as string
+
+      if (!text || text.trim().length === 0) {
+        this.statusText = '按住说话'
+        if (this.onError) this.onError('未识别到语音')
+        return
+      }
+
+      this.statusText = 'AI 解析中...'
+      const aiMod = await import('../../service/AIService')
+      const result: AIParseResult = await aiMod.AIService.parse(text)
+      this.statusText = '按住说话'
+      if (this.onResult) this.onResult(result)
+    } catch (e) {
+      console.error('[VoiceButton] recognize failed:', JSON.stringify(e))
+      this.statusText = '按住说话'
+      if (this.onError) this.onError('识别失败')
     }
   }
 
-  /** 松手 → 识别 + 解析 */
-  private async onPressEnd(): Promise<void> {
-    if (this.state !== VoiceState.LISTENING) return
-
-    this.state = VoiceState.RECOGNIZING
-    this.scaleValue = 1.0
-    this.pulseOpacity = 0
-
-    const text = await this.voiceService.stopListening()
-
-    if (!text || text.trim().length === 0) {
-      this.state = VoiceState.IDLE
-      this.onError?.('未识别到语音')
-      return
-    }
-
-    // AI 解析
-    this.state = VoiceState.PARSING
-    const result = await AIService.parse(text)
-
-    this.state = VoiceState.IDLE
-    this.onResult?.(result)
-  }
-
-  /** 状态文字 */
-  private get statusText(): string {
-    switch (this.state) {
-      case VoiceState.IDLE: return '按住说话'
-      case VoiceState.LISTENING: return '正在听...'
-      case VoiceState.RECOGNIZING: return '识别中...'
-      case VoiceState.PARSING: return '解析中...'
-    }
-  }
-
-  /** 按钮颜色 */
-  private get buttonColor(): string {
-    switch (this.state) {
-      case VoiceState.LISTENING: return '#e74c3c'
-      case VoiceState.RECOGNIZING:
-      case VoiceState.PARSING: return '#f39c12'
-      default: return '#3498db'
-    }
+  reset(): void {
+    this.listening = false
+    this.pressed = false
+    this.statusText = '按住说话'
+    clearTimeout(this.timer)
   }
 
   build() {
-    Column() {
-      Stack({ alignContent: Alignment.Center }) {
-        // 波纹扩散
-        if (this.pulseOpacity > 0) {
-          Circle()
-            .width(this.size * 1.5)
-            .height(this.size * 1.5)
-            .fill('#e74c3c')
-            .opacity(this.pulseOpacity)
-            .animation({
-              duration: 1000,
-              curve: Curve.EaseOut,
-              iterations: -1,
-              playMode: PlayMode.Alternate
-            })
-        }
-
-        // 主按钮
-        Circle()
-          .width(this.size)
-          .height(this.size)
-          .fill(this.buttonColor)
-          .shadow({
-            radius: 12,
-            color: this.state === VoiceState.LISTENING ? '#e74c3c40' : '#00000020',
-            offsetY: 4
-          })
-          .scale({ x: this.scaleValue, y: this.scaleValue })
-          .animation({ duration: 200, curve: Curve.EaseInOut })
-
-        // 麦克风图标（文字模拟）
-        Text(this.state === VoiceState.LISTENING ? '🎤' : '🎙️')
-          .fontSize(this.size * 0.4)
+    Button() {
+      Column() {
+        Text(this.listening ? '🎤' : '🎙️').fontSize(28)
+        Text(this.statusText).fontSize(14).margin({ top: 4 })
       }
-      .width(this.size * 1.5)
-      .height(this.size * 1.5)
-
-      // 状态文字
-      Text(this.statusText)
-        .fontSize(13)
-        .fontColor(this.state === VoiceState.IDLE ? '#999' : '#333')
-        .margin({ top: 8 })
     }
-    .gesture(
-      LongPressGesture({ repeat: false, duration: 200 }) // 200ms 长按触发
-        .onAction(() => this.onPressStart())
-        .onActionEnd(() => this.onPressEnd())
-    )
+    .width(120).height(120)
+    .borderRadius(60)
+    .backgroundColor(this.listening ? '#e74c3c' : '#3498db')
+    .fontColor('#fff')
+    .onTouch((e: TouchEvent) => {
+      if (e.type === TouchType.Down) this.onDown()
+      else if (e.type === TouchType.Up || e.type === TouchType.Cancel) this.onUp()
+    })
   }
 }

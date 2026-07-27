@@ -144,7 +144,12 @@ struct SettingsPage {
           Blank()
           Text('⚙️ 设置').fontSize(18).fontWeight(FontWeight.Medium)
           Blank()
-          Text('  ').fontSize(18)
+          if (AuthService.isLoggedIn()) {
+            Text(`👤 ${AuthService.getCurrentUsername()}`).fontSize(12).fontColor('#999')
+          } else {
+            Text('登录').fontSize(13).fontColor('#27ae60').fontWeight(FontWeight.Medium)
+              .onClick(() => router.pushUrl({ url: 'pages/Index' }))
+          }
         }
         .width('100%')
         .height(48)
@@ -233,14 +238,24 @@ struct SettingsPage {
               }
               .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 12 })
 
-              // 登出
-              Row() {
-                Text('退出登录').fontSize(15).fontColor('#e74c3c').fontWeight(FontWeight.Medium)
+              // 登出 / 登录
+              if (AuthService.isLoggedIn()) {
+                Row() {
+                  Text('退出登录').fontSize(15).fontColor('#e74c3c').fontWeight(FontWeight.Medium)
+                }
+                .width('100%')
+                .padding({ left: 16, top: 14, bottom: 14 })
+                .onClick(() => { AuthService.logout(); router.replaceUrl({ url: 'pages/Index' }) })
+                .border({ width: { top: 0.5 }, color: '#f0f0f0' })
+              } else {
+                Row() {
+                  Text('去登录').fontSize(15).fontColor('#27ae60').fontWeight(FontWeight.Medium)
+                }
+                .width('100%')
+                .padding({ left: 16, top: 14, bottom: 14 })
+                .onClick(() => router.pushUrl({ url: 'pages/Index' }))
+                .border({ width: { top: 0.5 }, color: '#f0f0f0' })
               }
-              .width('100%')
-              .padding({ left: 16, top: 14, bottom: 14 })
-              .onClick(() => { AuthService.logout(); router.replaceUrl({ url: 'pages/LoginPage' }) })
-              .border({ width: { top: 0.5 }, color: '#f0f0f0' })
             }
             .width('100%')
             .backgroundColor('#fff')

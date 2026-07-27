@@ -6,6 +6,39 @@ import { AppConstants } from '../common/constants/AppConstants'
 import { AIParseResult } from '../model/AIParseResult'
 import { TransactionType } from '../model/Transaction'
 
+interface ChatMessage {
+  role: string
+  content: string
+}
+
+interface ChatRequest {
+  model: string
+  messages: ChatMessage[]
+  temperature: number
+  max_tokens: number
+  response_format: Record<string, string>
+}
+
+interface ChoiceMessage {
+  content: string
+}
+
+interface Choice {
+  message: ChoiceMessage
+}
+
+interface ChatResponse {
+  choices: Choice[]
+}
+
+interface ParsedResult {
+  type: string
+  amount: number
+  category: string
+  note: string
+  confidence: number
+}
+
 const SYSTEM_PROMPT = `你是一个记账助手。将用户的语音文本解析为交易记录 JSON。
 
 规则：
@@ -15,14 +48,8 @@ const SYSTEM_PROMPT = `你是一个记账助手。将用户的语音文本解析
 4. 提取备注（去掉金额和品类后的内容）
 5. confidence 表示你对解析结果的置信度(0-1)
 
-返回严格 JSON 格式，不要额外文字：
-{"type":"expense","amount":35.5,"category":"餐饮","note":"午餐","confidence":0.95}
-
-示例输入 → 输出：
-"买了杯奶茶18块" → {"type":"expense","amount":18,"category":"餐饮","note":"奶茶","confidence":0.95}
-"收到工资8000" → {"type":"income","amount":8000,"category":"工资","note":"","confidence":0.98}
-"打车去公司花了25" → {"type":"expense","amount":25,"category":"交通","note":"去公司","confidence":0.95}
-"今天吃饭" → {"type":"expense","amount":0,"category":"餐饮","note":"","confidence":0.3}`
+返回严格 JSON 格式：
+{"type":"expense","amount":35.5,"category":"餐饮","note":"午餐","confidence":0.95}`
 
 export class AIService {
   static async parse(text: string): Promise<AIParseResult> {
@@ -32,6 +59,17 @@ export class AIService {
 
     const httpRequest = http.createHttp()
     try {
+      const sysMsg: ChatMessage = { role: 'system', content: SYSTEM_PROMPT }
+      const userMsg: ChatMessage = { role: 'user', content: text }
+      const fmt: Record<string, string> = { 'type': 'json_object' }
+      const reqBody: ChatRequest = {
+        model: 'deepseek-chat',
+        messages: [sysMsg, userMsg],
+        temperature: 0.1,
+        max_tokens: 200,
+        response_format: fmt
+      }
+
       const response = await httpRequest.request(
         AppConstants.DEEPSEEK_API_URL,
         {
@@ -40,36 +78,28 @@ export class AIService {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${AppConstants.DEEPSEEK_API_KEY}`
           },
-          extraData: JSON.stringify({
-            model: 'deepseek-chat',
-            messages: [
-              { role: 'system', content: SYSTEM_PROMPT } as Record<string, Object>,
-              { role: 'user', content: text } as Record<string, Object>
-            ],
-            temperature: 0.1,
-            max_tokens: 200,
-            response_format: { type: 'json_object' } as Record<string, Object>
-          }),
+          extraData: JSON.stringify(reqBody) as string,
           connectTimeout: 10000,
           readTimeout: 15000
         }
       )
 
-      const data = JSON.parse(response.result as string)
-      const content = data.choices?.[0]?.message?.content
+      const rawData: string = response.result as string
+      const data: ChatResponse = JSON.parse(rawData) as ChatResponse
+      const content: string = data.choices[0]?.message?.content || ''
 
       if (!content) {
         return AIService.fallbackResult(text)
       }
 
-      const parsed = JSON.parse(content)
+      const parsed: ParsedResult = JSON.parse(content) as ParsedResult
       return AIParseResult.create(
         parsed.type === 'income' ? TransactionType.INCOME : TransactionType.EXPENSE,
-        typeof parsed.amount === 'number' ? parsed.amount : 0,
+        parsed.amount,
         parsed.category || '其他',
         parsed.note || '',
         text,
-        typeof parsed.confidence === 'number' ? parsed.confidence : 0.5
+        parsed.confidence || 0.5
       )
     } catch (err) {
       console.error(`[AIService] API failed: ${JSON.stringify(err)}`)

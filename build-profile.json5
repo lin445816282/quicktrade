@@ -1,6 +1,33 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "D:/QuickTrade/quicktrade.p12",
+          "storePassword": "0000001B4AE1DE104CA88BE43690BCAB59B082404BCDEDCFBF3E0D3BDC7A35549E8BFF0BD067D8E21A5A08",
+          "keyAlias": "quicktrade",
+          "keyPassword": "0000001B1C2029E9F681E3188A7CC68DC31D7800ED1F8853B946E7DD3B07DE7F50D015053A92C1F6EC00CE",
+          "signAlg": "SHA256withECDSA",
+          "profile": "D:/QuickTrade/quicktrade-release.p7b",
+          "certpath": "D:/QuickTrade/quicktrade-release.cer"
+        }
+      },
+      {
+        "name": "quicktrade2",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "D:/QuickTrade/quicktrade.p12",
+          "storePassword": "0000001B19ACF7EF61F8E9526876F518A59BBC21689368BF2AE21E98ACC9FC959DB7AE595DD1813EF41CBD",
+          "keyAlias": "Key",
+          "keyPassword": "0000001B1F79D6CC90CC00F6C66DDB281350F6726A3E9E39F3BE04C3D7D2BB9D639C6594871EEC8E6E59F1",
+          "signAlg": "SHA256withECDSA",
+          "profile": "D:/QuickTrade/quicktrade-release.p7b",
+          "certpath": "D:/QuickTrade/quicktrade-release.cer"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
@@ -19,7 +46,9 @@
       "targets": [
         {
           "name": "default",
-          "applyToProducts": ["default"]
+          "applyToProducts": [
+            "default"
+          ]
         }
       ]
     }

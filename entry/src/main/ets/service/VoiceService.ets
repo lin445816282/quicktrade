@@ -1,92 +1,179 @@
 /**
- * 语音识别服务
- * 封装 @ohos.ai.speech.SpeechRecognizer，提供长按说话→松手识别
+ * 语音识别服务 — API 24 适配
+ * @kit.CoreSpeechKit + @ohos.multimedia.audio 录音推流
  */
-import speech from '@ohos.ai.speech'
-import { AppConstants } from '../common/constants/AppConstants'
-
-export interface VoiceResult {
-  text: string        // 识别文本
-  isFinal: boolean    // 是否最终结果
-}
+import { speechRecognizer } from '@kit.CoreSpeechKit'
+import audio from '@ohos.multimedia.audio'
 
 export class VoiceService {
-  private recognizer: speech.SpeechRecognizer | null = null
+  private engine: speechRecognizer.SpeechRecognitionEngine | null = null
+  private capturer: audio.AudioCapturer | null = null
+  private sessionId: string = ''
   private resolvePromise: ((value: string) => void) | null = null
   private finalText: string = ''
+  private isActive: boolean = false
 
-  /** 开始监听（按住说话时调用） */
   async startListening(): Promise<void> {
-    this.recognizer = speech.createSpeechRecognizer()
     this.finalText = ''
-    this.resolvePromise = null
+    this.isActive = true
 
-    // 识别参数
-    const extraParams: Record<string, Object> = {
-      'language': AppConstants.ASR_LANGUAGE,
-      'vadBegin': 3000,   // 静音检测开始时间 ms
-      'vadEnd': 800       // 静音检测结束时间 ms
+    // 1. 创建 ASR 引擎
+    console.info('[VoiceService] startListening: creating engine...')
+    try {
+      const engine = await this.createEngine()
+      this.engine = engine
+      console.info('[VoiceService] startListening: engine created OK')
+    } catch (e) {
+      const err = e as Record<string, string>
+      console.error('[VoiceService] createEngine failed: ' + (err.message || 'unknown'))
+      throw new Error('createEngine: ' + (err.message || 'unknown'))
     }
 
-    // 监听识别结果
-    this.recognizer.on('result', (result: speech.SpeechRecognizerResult) => {
-      if (result.result) {
-        this.finalText = result.result
+    // 2. 设置监听
+    const sid = 'qt_' + String(Date.now())
+    this.sessionId = sid
+
+    this.engine.setListener({
+      onStart: (_sid: string, _msg: string) => {
+        console.info('[VoiceService] onStart sid=' + _sid)
+      },
+      onEvent: (_sid: string, _code: number, _msg: string) => {
+        console.info('[VoiceService] onEvent code=' + String(_code) + ' msg=' + _msg)
+      },
+      onResult: (_sid: string, result: speechRecognizer.SpeechRecognitionResult) => {
+        console.info('[VoiceService] onResult isFinal=' + String(result.isFinal) +
+          ' text=' + (result.result || ''))
+        if (result.result) {
+          this.finalText = result.result
+        }
+        if (result.isFinal) {
+          this.resolve(this.finalText)
+        }
+      },
+      onComplete: (_sid: string, _msg: string) => {
+        console.info('[VoiceService] onComplete finalText=' + this.finalText)
+        this.resolve(this.finalText)
+      },
+      onError: (_sid: string, _code: number, msg: string) => {
+        console.error('[VoiceService] onError code=' + String(_code) + ' msg=' + msg)
+        this.resolve(this.finalText || '')
       }
     })
 
-    // 监听识别结束
-    this.recognizer.on('end', () => {
-      if (this.resolvePromise) {
-        this.resolvePromise(this.finalText)
-        this.resolvePromise = null
-      }
-    })
+    // 3. 开始 ASR 会话
+    const audioInfo: speechRecognizer.AudioInfo = {
+      audioType: 'pcm',
+      sampleRate: 16000,
+      soundChannel: 1,
+      sampleBit: 16
+    }
+    try {
+      this.engine.startListening({
+        sessionId: sid,
+        audioInfo: audioInfo
+      })
+      console.info('[VoiceService] startListening: session started sid=' + sid)
+    } catch (e) {
+      const err = e as Record<string, string>
+      console.error('[VoiceService] engine.startListening failed: ' + (err.message || 'unknown'))
+      throw new Error('startListening: ' + (err.message || 'unknown'))
+    }
 
-    // 监听错误
-    this.recognizer.on('error', (err: string) => {
-      console.error(`[VoiceService] ASR 错误: ${err}`)
-      if (this.resolvePromise) {
-        // 错误时返回已有文本或空
-        this.resolvePromise(this.finalText || '')
-        this.resolvePromise = null
-      }
-    })
-
-    // 开始识别
-    await this.recognizer.startListening({
-      language: AppConstants.ASR_LANGUAGE,
-      extraParams: JSON.stringify(extraParams)
-    })
+    // 4. 启动麦克风推流
+    try {
+      await this.startCapture(sid)
+      console.info('[VoiceService] startCapture: capturer started OK')
+    } catch (e) {
+      const err = e as Record<string, string>
+      console.error('[VoiceService] startCapture failed: ' + (err.message || 'unknown'))
+      throw new Error('startCapture: ' + (err.message || 'unknown'))
+    }
   }
 
-  /** 停止监听并返回识别文本（松手时调用） */
+  private createEngine(): Promise<speechRecognizer.SpeechRecognitionEngine> {
+    return new Promise<speechRecognizer.SpeechRecognitionEngine>(
+      (resolve: (e: speechRecognizer.SpeechRecognitionEngine) => void,
+       reject: (err: Error) => void) => {
+        speechRecognizer.createEngine(
+          { language: 'zh-CN', online: 1 },
+          (err: Error, eng: speechRecognizer.SpeechRecognitionEngine) => {
+            if (err) {
+              reject(err)
+            } else {
+              resolve(eng)
+            }
+          }
+        )
+      }
+    )
+  }
+
+  private async startCapture(sid: string): Promise<void> {
+    const streamInfo: audio.AudioStreamInfo = {
+      samplingRate: audio.AudioSamplingRate.SAMPLE_RATE_16000,
+      channels: audio.AudioChannel.CHANNEL_1,
+      sampleFormat: audio.AudioSampleFormat.SAMPLE_FORMAT_S16LE,
+      encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
+    }
+    const capturerInfo: audio.AudioCapturerInfo = {
+      source: audio.SourceType.SOURCE_TYPE_MIC,
+      capturerFlags: 0
+    }
+    const options: audio.AudioCapturerOptions = {
+      streamInfo: streamInfo,
+      capturerInfo: capturerInfo
+    }
+    this.capturer = await audio.createAudioCapturer(options)
+
+    this.capturer.on('readData', (buffer: ArrayBuffer) => {
+      if (!this.isActive || !this.engine) return
+      try {
+        this.engine.writeAudio(sid, new Uint8Array(buffer))
+      } catch (_e) {
+        // 忽略推流错误
+      }
+    })
+
+    await this.capturer.start()
+  }
+
   async stopListening(): Promise<string> {
-    if (!this.recognizer) return ''
-
-    return new Promise<string>((resolve) => {
+    this.isActive = false
+    return new Promise<string>((resolve: (text: string) => void) => {
       this.resolvePromise = resolve
-
-      // 设置超时（最长等待 3 秒）
       setTimeout(() => {
         if (this.resolvePromise) {
           this.resolvePromise(this.finalText || '')
           this.resolvePromise = null
         }
-      }, 3000)
-
-      this.recognizer!.stopListening()
+      }, 5000)
+      if (this.capturer) {
+        this.capturer.stop().catch(() => {})
+      }
+      if (this.engine && this.sessionId) {
+        try {
+          this.engine.cancel(this.sessionId)
+        } catch (_e) {
+          this.resolve(this.finalText || '')
+        }
+      }
     })
   }
 
-  /** 释放资源 */
-  destroy(): void {
-    if (this.recognizer) {
-      this.recognizer.off('result')
-      this.recognizer.off('end')
-      this.recognizer.off('error')
-      this.recognizer.destroy()
-      this.recognizer = null
+  private resolve(text: string): void {
+    if (this.resolvePromise) {
+      this.resolvePromise(text)
+      this.resolvePromise = null
     }
+  }
+
+  destroy(): void {
+    this.isActive = false
+    if (this.capturer) {
+      this.capturer.release().catch(() => {})
+      this.capturer = null
+    }
+    this.engine = null
+    this.resolvePromise = null
   }
 }

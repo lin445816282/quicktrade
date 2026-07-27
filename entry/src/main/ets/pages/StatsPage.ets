@@ -5,6 +5,7 @@ import { DatabaseService } from '../service/DatabaseService'
 import { TransactionType } from '../model/Transaction'
 import { NumberUtils } from '../common/utils/NumberUtils'
 import router from '@ohos.router'
+import { AuthService } from '../service/AuthService'
 
 interface MonthRange { start: string; end: string }
 interface PadRect { top: number; right: number; bottom: number; left: number }
@@ -297,7 +298,12 @@ struct StatsPage {
         Blank()
         Text('📊 统计').fontSize(18).fontWeight(FontWeight.Medium)
         Blank()
-        Text('  ').fontSize(18)
+        if (AuthService.isLoggedIn()) {
+          Text(`👤 ${AuthService.getCurrentUsername()}`).fontSize(12).fontColor('#999')
+        } else {
+          Text('登录').fontSize(13).fontColor('#27ae60').fontWeight(FontWeight.Medium)
+            .onClick(() => router.pushUrl({ url: 'pages/Index' }))
+        }
       }
       .width('100%').height(48).padding({ left: 16, right: 16 }).backgroundColor('#fff')
 

@@ -3,7 +3,7 @@
  */
 export class AppConstants {
   // DeepSeek API
-  static readonly DEEPSEEK_API_KEY: string = 'sk-YOUR_KEY_HERE'  // ← 替换为你的 Key
+  static readonly DEEPSEEK_API_KEY: string = 'sk-d2853ed81f354e52bf9d1c7d15ea4277'
   static readonly DEEPSEEK_API_URL: string = 'https://api.deepseek.com/v1/chat/completions'
 
   // 数据库
