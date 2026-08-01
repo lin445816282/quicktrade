@@ -3,6 +3,7 @@
     { "name": "module_desc", "value": "快记交易 — AI语音记账" },
     { "name": "EntryAbility_desc", "value": "快记交易" },
     { "name": "EntryAbility_label", "value": "快记交易" },
+    { "name": "app_name", "value": "快记交易" },
     { "name": "mic_reason", "value": "用于语音记账功能，识别您的语音输入" }
   ]
 }

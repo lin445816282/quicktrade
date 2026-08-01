@@ -2,13 +2,14 @@
  * 手动记账页 ViewModel — API 11 兼容版
  */
 import { Transaction, TransactionType } from '../model/Transaction'
+import { localISO } from '../common/utils/DateUtils'
 
 export class RecordViewModel {
   type: TransactionType = TransactionType.EXPENSE
   amount: string = '0'
   category: string = '餐饮'
   note: string = ''
-  date: string = new Date().toISOString()
+  date: string = localISO()
 
   inputDigit(digit: string): void {
     if (this.amount === '0' && digit !== '.') {
@@ -50,7 +51,7 @@ export class RecordViewModel {
     this.amount = '0'
     this.category = '餐饮'
     this.note = ''
-    this.date = new Date().toISOString()
+    this.date = localISO()
   }
 
   get amountValue(): number {

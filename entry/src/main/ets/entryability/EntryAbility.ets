@@ -1,5 +1,5 @@
 /**
- * App 入口 — 隐私同意 → 登录判断 → 路由
+ * App 入口 — 隐私同意 → 恢复登录态 → 路由
  */
 import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit'
 import { hilog } from '@kit.PerformanceAnalysisKit'
@@ -14,6 +14,7 @@ const PREFS_NAME = 'quicktrade_settings'
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(0x0000, TAG, 'QuickTrade onCreate')
+    AuthService.init(this.context)  // 设置 context 用于 preferences
     initDB(this.context)
   }
 
@@ -33,11 +34,11 @@ export default class EntryAbility extends UIAbility {
       const prefs = await preferences.getPreferences(this.context, PREFS_NAME)
       const agreed: boolean = await prefs.get('privacy_agreed', false) as boolean
       if (agreed) {
-        // 同意过隐私 → 直接进首页（游客状态，右上角可登录）
+        // 同意过隐私 → 恢复登录态 → 进首页
+        await AuthService.restoreLogin()
         startPage = 'pages/Index'
       }
     } catch (e) {
-      // preferences 读取失败 → 保守起见显示隐私页
       hilog.warn(0x0000, TAG, `Privacy prefs read failed: ${JSON.stringify(e)}`)
     }
 

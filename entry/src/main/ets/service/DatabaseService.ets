@@ -6,6 +6,7 @@ import relationalStore from '@ohos.data.relationalStore'
 import { hilog } from '@kit.PerformanceAnalysisKit'
 import { Transaction, TransactionType } from '../model/Transaction'
 import { Category } from '../model/Category'
+import { localISO } from '../common/utils/DateUtils'
 import { AuthService } from './AuthService'
 
 interface MonthlySummary { income: number; expense: number }
@@ -71,6 +72,8 @@ export async function getStore(): Promise<relationalStore.RdbStore> {
     await storeInstance.executeSql(SQL_CREATE_TRANSACTIONS, [])
     await storeInstance.executeSql(SQL_CREATE_CATEGORIES, [])
     hilog.info(0x0000, 'QuickTrade', 'getStore: tables created')
+    // 种子默认系统品类（user_id=0）
+    await seedDefaultCategories(storeInstance)
     // 迁移：旧数据库无 huawei_uid 列
     try {
       await storeInstance.executeSql('ALTER TABLE users ADD COLUMN huawei_uid TEXT')
@@ -79,6 +82,50 @@ export async function getStore(): Promise<relationalStore.RdbStore> {
     }
   }
   return storeInstance!
+}
+
+/** 种子默认品类 — 仅当 categories 表为空时 */
+async function seedDefaultCategories(store: relationalStore.RdbStore): Promise<void> {
+  try {
+    const check = await store.querySql('SELECT COUNT(*) as cnt FROM categories', [])
+    check.goToFirstRow()
+    if (check.getLong(check.getColumnIndex('cnt')) > 0) {
+      check.close()
+      return
+    }
+    check.close()
+
+    const defaults: Array<Array<string | number>> = [
+      ['餐饮', '🍜', 'expense', 1],
+      ['交通', '🚗', 'expense', 2],
+      ['购物', '🛍️', 'expense', 3],
+      ['日用品', '🧴', 'expense', 4],
+      ['娱乐', '🎮', 'expense', 5],
+      ['通讯', '📱', 'expense', 6],
+      ['居住', '🏠', 'expense', 7],
+      ['医疗', '💊', 'expense', 8],
+      ['教育', '📚', 'expense', 9],
+      ['工资', '💵', 'income', 1],
+      ['投资', '📈', 'income', 2],
+      ['兼职', '💼', 'income', 3],
+      ['退款', '↩️', 'income', 4],
+      ['其他', '📌', 'expense', 99],
+      ['其他', '📌', 'income', 99]
+    ]
+    for (let i = 0; i < defaults.length; i++) {
+      const vb: relationalStore.ValuesBucket = {
+        'name': defaults[i][0] as string,
+        'icon': defaults[i][1] as string,
+        'type': defaults[i][2] as string,
+        'sort_order': defaults[i][3] as number,
+        'user_id': 0
+      }
+      await store.insert('categories', vb)
+    }
+    hilog.info(0x0000, 'QuickTrade', `seedDefaultCategories: ${defaults.length} rows`)
+  } catch (e) {
+    hilog.error(0x0000, 'QuickTrade', `seedDefaultCategories failed: ${JSON.stringify(e)}`)
+  }
 }
 
 function buildCategory(id: number, name: string, icon: string, type: string, sortOrder: number): Category {
@@ -103,7 +150,7 @@ export class DatabaseService {
       'amount': tx.amount,
       'category': tx.category,
       'note': tx.note,
-      'created_at': tx.created_at || new Date().toISOString(),
+      'created_at': tx.created_at || localISO(),
       'user_id': AuthService.getCurrentUserId()
     }
     return await store.insert('transactions', vb)
@@ -152,9 +199,11 @@ export class DatabaseService {
   }
 
   static async getTodaySummary(): Promise<MonthlySummary> {
-    const today = new Date().toISOString().split('T')[0]
-    const start = `${today}T00:00:00.000Z`
-    const end = `${today}T23:59:59.999Z`
+    const now = new Date()
+    const p = (n: number) => String(n).padStart(2, '0')
+    const today = `${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())}`
+    const start = `${today}T00:00:00`
+    const end = `${today}T23:59:59`
     const store = await getStore()
     const uid = AuthService.getCurrentUserId()
     const resultSet = await store.querySql(
@@ -278,7 +327,7 @@ export class DatabaseService {
   static async getCategories(type?: TransactionType): Promise<Category[]> {
     const store = await getStore()
     const uid = AuthService.getCurrentUserId()
-    let sql = 'SELECT * FROM categories WHERE user_id = ?'
+    let sql = 'SELECT * FROM categories WHERE user_id = ? OR user_id = 0'
     const params: (string | number)[] = [uid]
     if (type) {
       sql += ' AND type = ?'
@@ -297,6 +346,11 @@ export class DatabaseService {
       ))
     }
     resultSet.close()
+    // 兜底：空则种子
+    if (list.length === 0 && !type) {
+      await seedDefaultCategories(store)
+      return await DatabaseService.getCategories(type)
+    }
     return list
   }
 
@@ -316,7 +370,7 @@ export class DatabaseService {
   static async deleteCategory(id: number): Promise<number> {
     const store = await getStore()
     const uid = AuthService.getCurrentUserId()
-    await store.executeSql('DELETE FROM categories WHERE id = ? AND user_id = ? AND sort_order >= 100', [id, uid])
+    await store.executeSql('DELETE FROM categories WHERE id = ? AND user_id = ?', [id, uid])
     return 1
   }
 

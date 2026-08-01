@@ -1,27 +1,36 @@
 /**
- * 认证服务 — 注册/登录/登出 + 密码哈希 + 华为帐号一键登录
+ * 认证服务 — 注册/登录/登出 + 密码哈希 + 华为帐号一键登录 + 持久化
  * API 24 适配
  */
 import relationalStore from '@ohos.data.relationalStore'
 import { User } from '../model/User'
 import { getStore } from './DatabaseService'
 import { hilog } from '@kit.PerformanceAnalysisKit'
-// 华为帐号一键登录通过 appAccount 系统能力实现
+import { preferences } from '@kit.ArkData'
 import appAccount from '@ohos.account.appAccount'
+import { common } from '@kit.AbilityKit'
+import { localISO } from '../common/utils/DateUtils'
 
 let currentUser: User | null = null
+let appContext: common.Context | null = null
+const PREFS_NAME = 'quicktrade_settings'
 
 // 华为帐号一键登录相关常量
 const HUAWEI_ACCOUNT_TYPE = 'com.huawei.hwid'
 const HUAWEI_OAUTH_SCOPE = 'https://www.huawei.com/auth/account/base'
 
-// 华为帐号类型接口
 interface AppAccountInfo {
   name: string
   owner: string
 }
 
 export class AuthService {
+
+  /** 初始化时设 context，用于 preferences */
+  static init(ctx: common.Context): void {
+    appContext = ctx
+  }
+
   static getCurrentUserId(): number {
     return currentUser ? currentUser.id : 0
   }
@@ -32,6 +41,45 @@ export class AuthService {
 
   static isLoggedIn(): boolean {
     return currentUser !== null
+  }
+
+  /** 启动时恢复登录态 */
+  static async restoreLogin(): Promise<boolean> {
+    if (!appContext) return false
+    try {
+      const prefs = await preferences.getPreferences(appContext, PREFS_NAME)
+      const userId: number = await prefs.get('login_user_id', 0) as number
+      const username: string = await prefs.get('login_username', '') as string
+      const passwordHash: string = await prefs.get('login_password_hash', '') as string
+      const huaweiUid: string = await prefs.get('login_huawei_uid', '') as string
+      const createdAt: string = await prefs.get('login_created_at', '') as string
+
+      if (userId > 0 && username) {
+        currentUser = User.create(userId, username, passwordHash, createdAt, huaweiUid)
+        hilog.info(0x0000, 'AuthService', `restoreLogin: user=${username} id=${userId}`)
+        return true
+      }
+    } catch (e) {
+      hilog.warn(0x0000, 'AuthService', `restoreLogin failed: ${JSON.stringify(e)}`)
+    }
+    return false
+  }
+
+  /** 持久化当前用户到 preferences */
+  private static async persistUser(user: User): Promise<void> {
+    if (!appContext) return
+    try {
+      const prefs = await preferences.getPreferences(appContext, PREFS_NAME)
+      await prefs.put('login_user_id', user.id)
+      await prefs.put('login_username', user.username)
+      await prefs.put('login_password_hash', user.password_hash)
+      await prefs.put('login_huawei_uid', user.huawei_uid || '')
+      await prefs.put('login_created_at', user.created_at)
+      await prefs.flush()
+      hilog.info(0x0000, 'AuthService', `persistUser: ${user.username}`)
+    } catch (e) {
+      hilog.warn(0x0000, 'AuthService', `persistUser failed: ${JSON.stringify(e)}`)
+    }
   }
 
   /** 注册 */
@@ -45,7 +93,7 @@ export class AuthService {
     existing.close()
 
     const hash = await AuthService.hashPassword(password)
-    const now = new Date().toISOString()
+    const now = localISO()
     const vb: relationalStore.ValuesBucket = {
       'username': username,
       'password_hash': hash,
@@ -59,6 +107,7 @@ export class AuthService {
 
     const user = User.create(id, username, hash, now)
     currentUser = user
+    await AuthService.persistUser(user)
     return user
   }
 
@@ -84,6 +133,7 @@ export class AuthService {
     }
     const user = User.create(id, username, storedHash, createdAt, huaweiUid)
     currentUser = user
+    await AuthService.persistUser(user)
     return user
   }
 
@@ -91,13 +141,28 @@ export class AuthService {
   static async huaweiLogin(): Promise<User> {
     try {
       const accountMgr: appAccount.AppAccountManager = appAccount.createAppAccountManager()
-      const accounts: AppAccountInfo[] = await accountMgr.getAllAccounts(HUAWEI_ACCOUNT_TYPE) as AppAccountInfo[]
+      let accounts: AppAccountInfo[] = []
+      try {
+        // getAllAccounts 可能因权限/配置问题失败，捕获后给友好提示
+        accounts = await accountMgr.getAllAccounts(HUAWEI_ACCOUNT_TYPE) as AppAccountInfo[]
+      } catch (e) {
+        hilog.error(0x0000, 'AuthService', `getAllAccounts failed: ${JSON.stringify(e)}`)
+        throw new Error('获取华为帐号失败，请使用密码登录')
+      }
       if (accounts.length === 0) {
-        throw new Error('未找到华为帐号，请先在系统设置中登录华为帐号')
+        throw new Error('未找到华为帐号，请先在系统设置中登录华为帐号或使用密码登录')
       }
       const accountName: string = accounts[0].name
-      const tokenValue: string = await accountMgr.getOAuthToken(accountName, HUAWEI_ACCOUNT_TYPE, HUAWEI_OAUTH_SCOPE) as string
-      const huaweiUid: string = tokenValue
+      let huaweiUid: string = ''
+      try {
+        const tokenValue: string = await accountMgr.getOAuthToken(
+          accountName, HUAWEI_ACCOUNT_TYPE, HUAWEI_OAUTH_SCOPE
+        ) as string
+        huaweiUid = tokenValue
+      } catch (e) {
+        hilog.error(0x0000, 'AuthService', `getOAuthToken failed: ${JSON.stringify(e)}`)
+        throw new Error('华为帐号授权失败，请在AGC中配置Account Kit或使用密码登录')
+      }
       if (!huaweiUid) {
         throw new Error('获取华为帐号信息失败')
       }
@@ -115,12 +180,14 @@ export class AuthService {
         resultSet.close()
         const user = User.create(id, username, storedHash, createdAt, huaweiUid)
         currentUser = user
+        await AuthService.persistUser(user)
         return user
       }
       resultSet.close()
 
+      // 新用户，自动注册
       const displayName: string = accountName.split('@')[0]
-      const now = new Date().toISOString()
+      const now = localISO()
       const newId = await store.insert('users', {
         'username': displayName,
         'password_hash': '',
@@ -130,6 +197,7 @@ export class AuthService {
       await AuthService.createDefaultCategories(store, newId)
       const user = User.create(newId, displayName, '', now, huaweiUid)
       currentUser = user
+      await AuthService.persistUser(user)
       return user
     } catch (e) {
       hilog.error(0x0000, 'AuthService', `Huawei login failed: ${JSON.stringify(e)}`)
@@ -138,8 +206,22 @@ export class AuthService {
     }
   }
 
-  static logout(): void {
+  static async logout(): Promise<void> {
     currentUser = null
+    // 清除持久化的登录态
+    if (appContext) {
+      try {
+        const prefs = await preferences.getPreferences(appContext, PREFS_NAME)
+        await prefs.delete('login_user_id')
+        await prefs.delete('login_username')
+        await prefs.delete('login_password_hash')
+        await prefs.delete('login_huawei_uid')
+        await prefs.delete('login_created_at')
+        await prefs.flush()
+      } catch (e) {
+        hilog.warn(0x0000, 'AuthService', `clear prefs failed: ${JSON.stringify(e)}`)
+      }
+    }
   }
 
   private static async createDefaultCategories(store: relationalStore.RdbStore, userId: number): Promise<void> {

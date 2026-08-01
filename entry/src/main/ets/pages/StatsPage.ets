@@ -1,380 +1,454 @@
 /**
- * 统计看板 — Phase 2 — API 24 适配
+ * 统计看板 V3 — 日期范围选择 + 每日趋势折线图 + 收支分类明细
  */
 import { DatabaseService } from '../service/DatabaseService'
-import { TransactionType } from '../model/Transaction'
+import { Transaction, TransactionType } from '../model/Transaction'
 import { NumberUtils } from '../common/utils/NumberUtils'
 import router from '@ohos.router'
-import { AuthService } from '../service/AuthService'
 
-interface MonthRange { start: string; end: string }
-interface PadRect { top: number; right: number; bottom: number; left: number }
-interface CatStat { category: string; total: number; type: string }
-
-interface PieSlice {
-  label: string
-  value: number
-  color: string
+class CatStat {
+  category: string = ''
+  total: number = 0
+  icon: string = ''
 }
 
-interface DayPoint {
-  date: string
-  income: number
-  expense: number
-}
+interface MonthInfo { year: number; month: number }
+interface DailyTotal { date: string; income: number; expense: number }
 
-const PIE_COLORS: string[] = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
-                     '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9']
-const CATEGORY_ICONS: Record<string, string> = {
+const CAT_ICONS: Record<string, string> = {
   '餐饮': '🍜', '交通': '🚗', '购物': '🛍️', '日用品': '🧴',
   '娱乐': '🎮', '通讯': '📱', '居住': '🏠', '医疗': '💊',
   '教育': '📚', '工资': '💵', '投资': '📈', '兼职': '💼',
   '退款': '↩️', '其他': '📌'
 }
 
+class Preset {
+  label: string = ''
+  days: number = 0
+}
+
+const PRESETS: Preset[] = [
+  { label: '今天', days: 0 } as Preset,
+  { label: '本周', days: -6 } as Preset,
+  { label: '本月', days: -29 } as Preset,
+  { label: '本年', days: -364 } as Preset,
+  { label: '全部', days: -9999 } as Preset
+]
+
 @Entry
 @Component
 struct StatsPage {
-  @State monthIncome: number = 0
-  @State monthExpense: number = 0
-  @State year: number = new Date().getFullYear()
-  @State month: number = new Date().getMonth() + 1
-  @State pieSlices: PieSlice[] = []
-  @State dayPoints: DayPoint[] = []
+  @State totalIncome: number = 0
+  @State totalExpense: number = 0
+  @State dayTotals: DailyTotal[] = []
+  @State expenseCats: CatStat[] = []
+  @State incomeCats: CatStat[] = []
+  @State listTab: number = 0
   @State loading: boolean = true
-  @State selectedTab: number = 0
 
-  private pieSettings: RenderingContextSettings = new RenderingContextSettings(true)
-  private pieCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.pieSettings)
-  private barSettings: RenderingContextSettings = new RenderingContextSettings(true)
-  private barCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.barSettings)
+  // 日期范围
+  @State startDate: Date = new Date()
+  @State endDate: Date = new Date()
+  @State startLabel: string = ''
+  @State endLabel: string = ''
+  @State activePreset: number = 0 // -1=自定义, 0=今天, 1=本周...
 
-  aboutToAppear() {
+  private chartSettings: RenderingContextSettings = new RenderingContextSettings(true)
+  private chartCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.chartSettings)
+
+  aboutToAppear(): void {
+    const now = new Date()
+    this.startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    this.endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    this.startLabel = this.fmtDate(this.startDate)
+    this.endLabel = this.fmtDate(this.endDate)
+    this.activePreset = 0
     this.loadData()
   }
 
-  getMonthRange(): MonthRange {
-    const m = String(this.month).padStart(2, '0')
-    const s = `${this.year}-${m}-01T00:00:00.000Z`
-    let ey = this.year, em = this.month + 1
-    if (em > 12) { em = 1; ey++ }
-    const sem = String(em).padStart(2, '0')
-    const e = `${ey}-${sem}-01T00:00:00.000Z`
-    const result: MonthRange = { start: s, end: e }
-    return result
+  fmtDate(d: Date): string {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
   }
 
-  get monthLabel(): string {
-    return `${this.year}年${this.month}月`
+  /** ---- 日期预设 ---- */
+
+  applyPreset(idx: number): void {
+    this.activePreset = idx
+    const now = new Date()
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    let start: Date
+    if (PRESETS[idx].days === 0) {
+      start = new Date(end)
+    } else if (PRESETS[idx].days < 0) {
+      start = new Date(end)
+      start.setDate(start.getDate() + PRESETS[idx].days)
+      if (idx === 3) { // 本月
+        start = new Date(now.getFullYear(), now.getMonth(), 1)
+      }
+      if (idx === 4) { // 本年
+        start = new Date(now.getFullYear(), 0, 1)
+      }
+    } else { // 全部
+      start = new Date(2000, 0, 1)
+    }
+    this.startDate = start
+    this.endDate = end
+    this.startLabel = this.fmtDate(start)
+    this.endLabel = this.fmtDate(end)
+    this.loadData()
   }
 
-  get netAmount(): string {
-    return NumberUtils.formatMoney(this.monthIncome - this.monthExpense)
+  openStartPicker(): void {
+    this.getUIContext().showDatePickerDialog({
+      start: new Date('2020-01-01'),
+      end: new Date('2030-12-31'),
+      selected: this.startDate,
+      showTime: false,
+      onDateAccept: (val: Date): void => {
+        this.startDate = new Date(val.getFullYear(), val.getMonth(), val.getDate())
+        this.startLabel = this.fmtDate(this.startDate)
+        if (this.startDate.getTime() > this.endDate.getTime()) {
+          this.endDate = new Date(this.startDate)
+          this.endLabel = this.fmtDate(this.endDate)
+        }
+        this.activePreset = -1
+        this.loadData()
+      }
+    })
   }
 
-  async loadData() {
+  openEndPicker(): void {
+    this.getUIContext().showDatePickerDialog({
+      start: this.startDate,
+      end: new Date('2030-12-31'),
+      selected: this.endDate,
+      showTime: false,
+      onDateAccept: (val: Date): void => {
+        this.endDate = new Date(val.getFullYear(), val.getMonth(), val.getDate())
+        this.endLabel = this.fmtDate(this.endDate)
+        if (this.endDate.getTime() < this.startDate.getTime()) {
+          this.startDate = new Date(this.endDate)
+          this.startLabel = this.fmtDate(this.startDate)
+        }
+        this.activePreset = -1
+        this.loadData()
+      }
+    })
+  }
+
+  /** ---- 数据 ---- */
+
+  getQueryStart(): string {
+    const d = this.startDate
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T00:00:00`
+  }
+
+  getQueryEnd(): string {
+    const d = this.endDate
+    const nd = new Date(d)
+    nd.setDate(nd.getDate() + 1)
+    return `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}-${String(nd.getDate()).padStart(2,'0')}T00:00:00`
+  }
+
+  async loadData(): Promise<void> {
     this.loading = true
     try {
-      const range = this.getMonthRange()
-      const s = range.start
-      const e = range.end
-      const summary = await DatabaseService.getMonthlySummary(this.year, this.month)
-      this.monthIncome = summary.income
-      this.monthExpense = summary.expense
-
-      const catStats = await DatabaseService.getCategoryStats(s, e)
-      this.pieSlices = this.buildPieData(catStats)
-
-      const daily = await DatabaseService.getDailyTotals(s, e)
-      this.dayPoints = daily
-    } catch (err) {
-      console.error('StatsPage loadData failed:', JSON.stringify(err))
-    }
-    this.loading = false
-  }
-
-  buildPieData(stats: CatStat[]): PieSlice[] {
-    const filterType = this.selectedTab === 0 ? TransactionType.EXPENSE : TransactionType.INCOME
-    const filtered = stats.filter((s: CatStat) => s.type === filterType)
-    if (filtered.length === 0) return []
-
-    const top = filtered.slice(0, 9)
-    let otherTotal = 0
-    for (let i = 9; i < filtered.length; i++) {
-      otherTotal += filtered[i].total
-    }
-    const result: PieSlice[] = []
-    for (let i = 0; i < top.length; i++) {
-      const slice: PieSlice = { label: top[i].category, value: top[i].total, color: PIE_COLORS[i] }
-      result.push(slice)
-    }
-    if (otherTotal > 0) {
-      const other: PieSlice = { label: '其他', value: otherTotal, color: '#CCCCCC' }
-      result.push(other)
-    }
-    return result
-  }
-
-  drawPieChart() {
-    const ctx = this.pieCtx
-    const w = 240, h = 240
-    const cx = w / 2, cy = h / 2
-    const r = 90
-
-    ctx.clearRect(0, 0, w, h)
-    if (this.pieSlices.length === 0) {
-      ctx.font = '14px sans-serif'
-      ctx.fillStyle = '#ccc'
-      ctx.textAlign = 'center'
-      ctx.fillText('暂无数据', cx, cy)
-      return
-    }
-
-    let total = 0
-    for (const slice of this.pieSlices) total += slice.value
-    if (total === 0) return
-
-    let startAngle = -Math.PI / 2
-    for (const slice of this.pieSlices) {
-      const angle = (slice.value / total) * Math.PI * 2
-      ctx.beginPath()
-      ctx.moveTo(cx, cy)
-      ctx.arc(cx, cy, r, startAngle, startAngle + angle)
-      ctx.closePath()
-      ctx.fillStyle = slice.color
-      ctx.fill()
-
-      const midAngle = startAngle + angle / 2
-      const lx = cx + Math.cos(midAngle) * (r + 16)
-      const ly = cy + Math.sin(midAngle) * (r + 16)
-      ctx.font = '10px sans-serif'
-      ctx.fillStyle = '#666'
-      ctx.textAlign = lx > cx ? 'left' : 'right'
-      ctx.fillText(`${slice.label}`, lx, ly + 4)
-
-      startAngle += angle
+      const start = this.getQueryStart()
+      const end = this.getQueryEnd()
+      const txs: Transaction[] = await DatabaseService.getByDateRange(start, end)
+      let inc = 0; let exp = 0
+      const expMap = new Map<string, CatStat>()
+      const incMap = new Map<string, CatStat>()
+      for (let i = 0; i < txs.length; i++) {
+        const tx = txs[i]
+        if (tx.type === TransactionType.INCOME || String(tx.type) === 'income') {
+          inc += tx.amount; this.accMap(incMap, tx)
+        } else {
+          exp += tx.amount; this.accMap(expMap, tx)
+        }
+      }
+      this.totalIncome = inc; this.totalExpense = exp
+      this.expenseCats = this.sortMap(expMap); this.incomeCats = this.sortMap(incMap)
+      const daily: DailyTotal[] = await DatabaseService.getDailyTotals(start, end)
+      this.dayTotals = daily
+      this.loading = false
+      setTimeout((): void => { this.drawChart() }, 300)
+    } catch (e) {
+      this.loading = false
     }
   }
 
-  drawBarChart() {
-    const ctx = this.barCtx
-    const w = 340, h = 180
-    const pad: PadRect = { top: 16, right: 12, bottom: 28, left: 12 }
-    const cw = w - pad.left - pad.right
-    const ch = h - pad.top - pad.bottom
-
-    ctx.clearRect(0, 0, w, h)
-
-    if (this.dayPoints.length === 0) {
-      ctx.font = '14px sans-serif'
-      ctx.fillStyle = '#ccc'
-      ctx.textAlign = 'center'
-      ctx.fillText('暂无数据', w / 2, h / 2)
-      return
+  accMap(map: Map<string, CatStat>, tx: Transaction): void {
+    const cat = tx.category || '其他'
+    if (!map.has(cat)) {
+      const cs = new CatStat(); cs.category = cat; cs.total = 0; cs.icon = CAT_ICONS[cat] || '📌'
+      map.set(cat, cs)
     }
+    const entry = map.get(cat)
+    if (entry) entry.total += tx.amount
+  }
+
+  sortMap(map: Map<string, CatStat>): CatStat[] {
+    const arr: CatStat[] = []
+    map.forEach((v: CatStat): void => {
+      const cs = new CatStat(); cs.category = v.category; cs.total = v.total; cs.icon = v.icon
+      arr.push(cs)
+    })
+    arr.sort((a: CatStat, b: CatStat): number => b.total - a.total)
+    return arr
+  }
+
+  /** ---- Canvas ---- */
+
+  drawChart(): void {
+    const ctx = this.chartCtx
+    const W = ctx.width
+    const H = 220
+    if (W <= 0 || this.dayTotals.length === 0) return
+    ctx.clearRect(0, 0, W, H)
+
+    const padL = 42; const padR = 14; const padT = 14; const padB = 26
+    const cw = W - padL - padR; const ch = H - padT - padB
+    const n = this.dayTotals.length
+    const step = Math.max(cw / n, 8)
 
     let maxVal = 0
-    for (const d of this.dayPoints) {
-      maxVal = Math.max(maxVal, Math.max(d.income, d.expense))
-    }
+    for (let i = 0; i < n; i++) maxVal = Math.max(maxVal, this.dayTotals[i].income, this.dayTotals[i].expense)
     if (maxVal === 0) maxVal = 100
-    maxVal = Math.ceil(maxVal * 1.2)
+    const yMax = Math.ceil(maxVal * 1.15)
 
-    const barCount = this.dayPoints.length
-    const barGap = 4
-    const groupW = cw / barCount
-    const barW = Math.max(4, (groupW - barGap * 2) / 2)
-
-    ctx.strokeStyle = '#f0f0f0'
-    ctx.lineWidth = 0.5
-    for (let i = 0; i <= 4; i++) {
-      const y = pad.top + (ch / 4) * i
-      ctx.beginPath()
-      ctx.moveTo(pad.left, y)
-      ctx.lineTo(w - pad.right, y)
-      ctx.stroke()
+    ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.5
+    for (let v = 0; v <= yMax; v += Math.ceil(yMax / 4)) {
+      const y = padT + ch - (v / yMax) * ch
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke()
+      ctx.fillStyle = '#999'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right'
+      ctx.fillText(String(v), padL - 4, y + 3)
     }
 
-    for (let i = 0; i < barCount; i++) {
-      const d = this.dayPoints[i]
-      const x = pad.left + groupW * i
-
-      if (d.income > 0) {
-        const ih = Math.max(2, (d.income / maxVal) * ch)
-        const iy = pad.top + ch - ih
-        ctx.fillStyle = '#27ae6050'
-        ctx.fillRect(x + barGap, iy, barW, ih)
-        ctx.fillStyle = '#27ae60'
-        ctx.fillRect(x + barGap, iy, barW, 2)
-      }
-
-      if (d.expense > 0) {
-        const eh = Math.max(2, (d.expense / maxVal) * ch)
-        const ey = pad.top + ch - eh
-        ctx.fillStyle = '#e74c3c50'
-        ctx.fillRect(x + barGap + barW, ey, barW, eh)
-        ctx.fillStyle = '#e74c3c'
-        ctx.fillRect(x + barGap + barW, ey, barW, 2)
-      }
-
-      const iCx = x + groupW / 2
-      const iCy = pad.top + ch - (d.income / maxVal) * ch
-      if (i > 0 && (d.income > 0 || this.dayPoints[i-1].income > 0)) {
-        const pi = this.dayPoints[i-1]
-        const pICy = pad.top + ch - (pi.income / maxVal) * ch
-        ctx.strokeStyle = '#27ae60'
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.moveTo(x - groupW / 2, pICy)
-        ctx.lineTo(iCx, iCy)
-        ctx.stroke()
-        ctx.fillStyle = '#27ae60'
-        ctx.beginPath()
-        ctx.arc(iCx, iCy, 3, 0, Math.PI * 2)
-        ctx.fill()
-      }
-
-      const eCy = pad.top + ch - (d.expense / maxVal) * ch
-      if (i > 0 && (d.expense > 0 || this.dayPoints[i-1].expense > 0)) {
-        const pi = this.dayPoints[i-1]
-        const pECy = pad.top + ch - (pi.expense / maxVal) * ch
-        ctx.strokeStyle = '#e74c3c'
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.moveTo(x - groupW / 2, pECy)
-        ctx.lineTo(iCx, eCy)
-        ctx.stroke()
-        ctx.fillStyle = '#e74c3c'
-        ctx.beginPath()
-        ctx.arc(iCx, eCy, 3, 0, Math.PI * 2)
-        ctx.fill()
+    ctx.fillStyle = '#999'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center'
+    const step6 = Math.max(Math.floor(n / 6), 1)
+    for (let i = 0; i < n; i++) {
+      if (i % step6 === 0 || i === n - 1) {
+        const x = padL + i * step
+        const lbl = this.dayTotals[i].date.length >= 10 ? this.dayTotals[i].date.slice(5) : this.dayTotals[i].date
+        ctx.fillText(lbl, x, H - 6)
       }
     }
 
-    const labelInterval = Math.max(1, Math.floor(barCount / 6))
-    ctx.font = '9px sans-serif'
-    ctx.fillStyle = '#999'
-    ctx.textAlign = 'center'
-    for (let i = 0; i < barCount; i += labelInterval) {
-      const d = this.dayPoints[i]
-      const label = d.date.slice(5)
-      ctx.fillText(label, pad.left + groupW * i + groupW / 2, h - 6)
+    this.paintLine(ctx, padL, padT, cw, ch, n, step, true, yMax)
+    this.paintLine(ctx, padL, padT, cw, ch, n, step, false, yMax)
+  }
+
+  paintLine(ctx: CanvasRenderingContext2D, x0: number, y0: number,
+            cw: number, ch: number, n: number, step: number,
+            isIncome: boolean, yMax: number): void {
+    const color = isIncome ? '#27ae60' : '#e74c3c'
+    const fillA = isIncome ? 'rgba(39,174,96,0.10)' : 'rgba(231,76,60,0.10)'
+    ctx.beginPath(); ctx.moveTo(x0, y0 + ch)
+    let lastV = 0; let lastX = x0; let lastY = y0 + ch
+    for (let i = 0; i < n; i++) {
+      const v = isIncome ? this.dayTotals[i].income : this.dayTotals[i].expense
+      const x = x0 + i * step; const y = y0 + ch - (v / yMax) * ch
+      ctx.lineTo(x, y)
+      if (v > 0) { lastV = v; lastX = x; lastY = y }
+    }
+    ctx.lineTo(x0 + (n - 1) * step, y0 + ch); ctx.closePath()
+    ctx.fillStyle = fillA; ctx.fill()
+
+    ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.5
+    for (let i = 0; i < n; i++) {
+      const v = isIncome ? this.dayTotals[i].income : this.dayTotals[i].expense
+      const x = x0 + i * step; const y = y0 + ch - (v / yMax) * ch
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+
+    ctx.fillStyle = color
+    for (let i = 0; i < n; i++) {
+      const v = isIncome ? this.dayTotals[i].income : this.dayTotals[i].expense
+      if (v > 0) {
+        const x = x0 + i * step; const y = y0 + ch - (v / yMax) * ch
+        ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill()
+      }
     }
 
-    ctx.font = '11px sans-serif'
-    ctx.textAlign = 'left'
-    ctx.fillStyle = '#27ae60'
-    ctx.fillRect(pad.left + 4, 0, 12, 10)
-    ctx.fillStyle = '#333'
-    ctx.fillText('收入', pad.left + 20, 10)
-    ctx.fillStyle = '#e74c3c'
-    ctx.fillRect(pad.left + 64, 0, 12, 10)
-    ctx.fillStyle = '#333'
-    ctx.fillText('支出', pad.left + 80, 10)
+    if (lastV > 0) {
+      ctx.font = '15px sans-serif'
+      ctx.fillStyle = color
+      ctx.textAlign = 'left'
+      ctx.fillText(isIncome ? '收入' : '支出', lastX + 8, lastY + 5)
+    }
   }
 
-  prevMonth() {
-    if (this.month === 1) { this.year--; this.month = 12 }
-    else { this.month-- }
-    this.loadData()
-  }
-
-  nextMonth() {
-    if (this.month === 12) { this.year++; this.month = 1 }
-    else { this.month++ }
-    this.loadData()
-  }
-
-  switchTab(idx: number) {
-    if (this.selectedTab === idx) return
-    this.selectedTab = idx
-    this.loadData()
-  }
+  /** ---- UI ---- */
 
   build() {
     Column() {
+      // 导航
       Row() {
-        Text('←').fontSize(18).fontColor('#999').onClick(() => router.back())
+        Text('←').fontSize(18).fontColor('#999').onClick((): void => { router.back() })
         Blank()
         Text('📊 统计').fontSize(18).fontWeight(FontWeight.Medium)
         Blank()
-        if (AuthService.isLoggedIn()) {
-          Text(`👤 ${AuthService.getCurrentUsername()}`).fontSize(12).fontColor('#999')
-        } else {
-          Text('登录').fontSize(13).fontColor('#27ae60').fontWeight(FontWeight.Medium)
-            .onClick(() => router.pushUrl({ url: 'pages/Index' }))
-        }
+        Text('  ').fontSize(18)
       }
       .width('100%').height(48).padding({ left: 16, right: 16 }).backgroundColor('#fff')
 
-      Row() {
-        Text('◀').fontSize(16).fontColor('#666').onClick(() => this.prevMonth()).padding(8)
-        Text(this.monthLabel).fontSize(18).fontWeight(FontWeight.Medium).layoutWeight(1).textAlign(TextAlign.Center)
-        Text('▶').fontSize(16).fontColor('#666').onClick(() => this.nextMonth()).padding(8)
-      }
-      .width('100%').height(44).backgroundColor('#fff').border({ width: { bottom: 0.5 }, color: '#f0f0f0' })
+      // 日期范围卡片
+      Column() {
+        // 预设按钮
+        Scroll() {
+          Row() {
+            ForEach(PRESETS, (p: Preset, idx: number): void => {
+              Text(p.label).fontSize(12)
+                .fontColor(idx === this.activePreset ? '#fff' : '#666')
+                .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+                .borderRadius(12)
+                .backgroundColor(idx === this.activePreset ? '#27ae60' : '#f0f0f0')
+                .margin({ right: 8 })
+                .onClick((): void => { this.applyPreset(idx) })
+            })
+          }
+          .padding({ left: 16, right: 16 })
+        }
+        .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
+        .width('100%')
 
+        // 日期范围选择行
+        Row() {
+          Text('📅').fontSize(14)
+          Row() {
+            Text(this.startLabel).fontSize(14).fontColor('#27ae60').fontWeight(FontWeight.Medium)
+            Text(' ▾').fontSize(10).fontColor('#999')
+          }
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .border({ width: 1, color: '#e0e0e0', radius: 6 })
+          .backgroundColor('#fff')
+          .onClick((): void => { this.openStartPicker() })
+
+          Text('→').fontSize(14).fontColor('#999').margin({ left: 6, right: 6 })
+
+          Row() {
+            Text(this.endLabel).fontSize(14).fontColor('#e74c3c').fontWeight(FontWeight.Medium)
+            Text(' ▾').fontSize(10).fontColor('#999')
+          }
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .border({ width: 1, color: '#e0e0e0', radius: 6 })
+          .backgroundColor('#fff')
+          .onClick((): void => { this.openEndPicker() })
+        }
+        .width('100%').padding({ left: 16, right: 16, top: 8, bottom: 10 })
+      }
+      .width('100%').backgroundColor('#fff')
+      .border({ width: { bottom: 0.5 }, color: '#f0f0f0' })
+
+      // 汇总卡片
+      Row() {
+        Column() {
+          Text('支出').fontSize(11).fontColor('#999')
+          Text(NumberUtils.formatMoney(this.totalExpense))
+            .fontSize(20).fontWeight(FontWeight.Bold).fontColor('#e74c3c').margin({ top: 2 })
+        }.layoutWeight(1)
+        Column() {
+          Text('收入').fontSize(11).fontColor('#999')
+          Text(NumberUtils.formatMoney(this.totalIncome))
+            .fontSize(20).fontWeight(FontWeight.Bold).fontColor('#27ae60').margin({ top: 2 })
+        }.layoutWeight(1)
+        Column() {
+          Text('结余').fontSize(11).fontColor('#999')
+          Text(NumberUtils.formatMoney(this.totalIncome - this.totalExpense))
+            .fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333').margin({ top: 2 })
+        }.layoutWeight(1)
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 14, bottom: 14 }).backgroundColor('#fff')
+
+      // 滚动区
       Scroll() {
         Column() {
-          Row() {
-            Column() { Text('支出').fontSize(12).fontColor('#999')
-              Text(NumberUtils.formatMoney(this.monthExpense)).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#e74c3c')
-            }
-            Column() { Text('收入').fontSize(12).fontColor('#999')
-              Text(NumberUtils.formatMoney(this.monthIncome)).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#27ae60')
-            }
-            Column() { Text('净额').fontSize(12).fontColor('#999')
-              Text(this.netAmount).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#333')
+          // 每日趋势
+          Column() {
+            Text('📈 每日趋势').fontSize(15).fontWeight(FontWeight.Medium)
+              .width('100%').padding({ left: 12, right: 12, top: 10, bottom: 4 })
+
+            if (this.dayTotals.length === 0 && !this.loading) {
+              Text('暂无数据').fontSize(13).fontColor('#ccc')
+                .width('100%').textAlign(TextAlign.Center).padding({ top: 30, bottom: 30 })
+            } else {
+              Canvas(this.chartCtx).width('100%').height(220)
+                .onReady((): void => { setTimeout((): void => { this.drawChart() }, 100) })
             }
           }
-          .width('100%').justifyContent(FlexAlign.SpaceAround).padding({ top: 16, bottom: 16 })
-          .backgroundColor('#fff').borderRadius(12).margin({ left: 16, right: 16, top: 12 })
+          .width('100%').backgroundColor('#fff').borderRadius(10)
+          .margin({ left: 12, right: 12, top: 8 })
 
+          // 收支明细
           Column() {
             Row() {
-              Text(this.selectedTab === 0 ? '💸 支出构成' : '💰 收入构成').fontSize(16).fontWeight(FontWeight.Medium)
+              Text('💸 收支明细').fontSize(15).fontWeight(FontWeight.Medium)
               Blank()
-              Row() {
-                Text('支出').fontSize(13).fontColor(this.selectedTab === 0 ? '#fff' : '#999')
-                  .padding({ left: 12, right: 12, top: 4, bottom: 4 }).borderRadius(12)
-                  .backgroundColor(this.selectedTab === 0 ? '#e74c3c' : '#f0f0f0').onClick(() => this.switchTab(0))
-                Text('收入').fontSize(13).fontColor(this.selectedTab === 1 ? '#fff' : '#999')
-                  .padding({ left: 12, right: 12, top: 4, bottom: 4 }).borderRadius(12)
-                  .backgroundColor(this.selectedTab === 1 ? '#27ae60' : '#f0f0f0').onClick(() => this.switchTab(1))
-              }
+              Text('支出').fontSize(12)
+                .fontColor(this.listTab === 0 ? '#fff' : '#999')
+                .padding({ left: 10, right: 10, top: 3, bottom: 3 }).borderRadius(10)
+                .backgroundColor(this.listTab === 0 ? '#e74c3c' : '#f0f0f0')
+                .onClick((): void => { this.listTab = 0 })
+              Text('收入').fontSize(12)
+                .fontColor(this.listTab === 1 ? '#fff' : '#999')
+                .padding({ left: 10, right: 10, top: 3, bottom: 3 }).borderRadius(10)
+                .backgroundColor(this.listTab === 1 ? '#27ae60' : '#f0f0f0')
+                .margin({ left: 6 })
+                .onClick((): void => { this.listTab = 1 })
             }
-            .width('100%').padding({ left: 16, right: 16, top: 12 })
+            .width('100%').padding({ left: 12, right: 12, top: 10, bottom: 6 })
 
-            if (this.pieSlices.length > 0) {
-              Canvas(this.pieCtx).width(240).height(240).onReady(() => this.drawPieChart()).margin({ top: 8, bottom: 8 })
-              Column() {
-                ForEach(this.pieSlices, (slice: PieSlice) => {
+            if (this.listTab === 0) {
+              if (this.expenseCats.length === 0) {
+                Text('暂无支出').fontSize(13).fontColor('#ccc')
+                  .width('100%').textAlign(TextAlign.Center).padding({ top: 20, bottom: 20 })
+              } else {
+                ForEach(this.expenseCats, (cs: CatStat, idx: number): void => {
                   Row() {
-                    Row().width(10).height(10).borderRadius(5).backgroundColor(slice.color).margin({ right: 8 })
-                    Text(CATEGORY_ICONS[slice.label] || '📌').fontSize(14)
-                    Text(slice.label).fontSize(12).fontColor('#333').margin({ left: 4 })
+                    Text(cs.icon).fontSize(16)
+                    Text(cs.category).fontSize(14).fontColor('#333').margin({ left: 8 })
                     Blank()
-                    Text(NumberUtils.formatMoney(slice.value)).fontSize(13).fontWeight(FontWeight.Medium)
+                    Text('-' + NumberUtils.formatMoney(cs.total))
+                      .fontSize(14).fontWeight(FontWeight.Medium).fontColor('#e74c3c')
                   }
-                  .width('100%').padding({ left: 16, right: 16, top: 6, bottom: 6 })
+                  .width('100%')
+                  .padding({ left: 16, right: 16, top: 9, bottom: 9 })
+                  .border({ width: { bottom: idx < this.expenseCats.length - 1 ? 0.5 : 0 }, color: '#f0f0f0' })
                 })
               }
             } else {
-              Text('本月暂无记录').fontSize(14).fontColor('#ccc').margin({ top: 24, bottom: 24 })
+              if (this.incomeCats.length === 0) {
+                Text('暂无收入').fontSize(13).fontColor('#ccc')
+                  .width('100%').textAlign(TextAlign.Center).padding({ top: 20, bottom: 20 })
+              } else {
+                ForEach(this.incomeCats, (cs: CatStat, idx: number): void => {
+                  Row() {
+                    Text(cs.icon).fontSize(16)
+                    Text(cs.category).fontSize(14).fontColor('#333').margin({ left: 8 })
+                    Blank()
+                    Text('+' + NumberUtils.formatMoney(cs.total))
+                      .fontSize(14).fontWeight(FontWeight.Medium).fontColor('#27ae60')
+                  }
+                  .width('100%')
+                  .padding({ left: 16, right: 16, top: 9, bottom: 9 })
+                  .border({ width: { bottom: idx < this.incomeCats.length - 1 ? 0.5 : 0 }, color: '#f0f0f0' })
+                })
+              }
             }
+            Row().height(20)
           }
-          .width('100%').backgroundColor('#fff').borderRadius(12).margin({ left: 16, right: 16, top: 12 })
-
-          Column() {
-            Text('📈 每日趋势').fontSize(16).fontWeight(FontWeight.Medium).width('100%').padding({ left: 16, top: 12 })
-            Canvas(this.barCtx).width('100%').height(180).onReady(() => this.drawBarChart())
-              .margin({ left: 4, right: 4, top: 8, bottom: 12 })
-          }
-          .width('100%').backgroundColor('#fff').borderRadius(12).margin({ left: 16, right: 16, top: 12, bottom: 24 })
+          .width('100%').backgroundColor('#fff').borderRadius(10)
+          .margin({ left: 12, right: 12, top: 8, bottom: 16 })
         }
         .width('100%')
       }
-      .layoutWeight(1).scrollBar(BarState.Off)
+      .layoutWeight(1).scrollBar(BarState.Off).edgeEffect(EdgeEffect.None)
     }
     .width('100%').height('100%').backgroundColor('#f5f5f5')
   }

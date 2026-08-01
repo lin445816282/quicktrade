@@ -3,6 +3,7 @@
  * 展示语音解析结果，允许编辑后确认保存
  */
 import { AIParseResult } from '../../model/AIParseResult'
+import { localISO } from '../../common/utils/DateUtils'
 import { Transaction, TransactionType } from '../../model/Transaction'
 import { Category, DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES } from '../../model/Category'
 import { CategoryPicker } from './CategoryPicker'
@@ -219,7 +220,7 @@ export struct ConfirmCard {
               amount: parseFloat(this.editAmount) || 0,
               category: this.editCategory,
               note: this.editNote,
-              created_at: new Date().toISOString()
+              created_at: localISO()
             })
             this.onConfirm?.(tx)
           })

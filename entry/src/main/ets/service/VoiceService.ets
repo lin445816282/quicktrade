@@ -1,6 +1,7 @@
 /**
  * 语音识别服务 — API 24 适配
  * @kit.CoreSpeechKit + @ohos.multimedia.audio 录音推流
+ * 优先在线识别，失败降级离线
  */
 import { speechRecognizer } from '@kit.CoreSpeechKit'
 import audio from '@ohos.multimedia.audio'
@@ -19,15 +20,8 @@ export class VoiceService {
 
     // 1. 创建 ASR 引擎
     console.info('[VoiceService] startListening: creating engine...')
-    try {
-      const engine = await this.createEngine()
-      this.engine = engine
-      console.info('[VoiceService] startListening: engine created OK')
-    } catch (e) {
-      const err = e as Record<string, string>
-      console.error('[VoiceService] createEngine failed: ' + (err.message || 'unknown'))
-      throw new Error('createEngine: ' + (err.message || 'unknown'))
-    }
+    this.engine = await this.createEngine()
+    console.info('[VoiceService] engine created OK')
 
     // 2. 设置监听
     const sid = 'qt_' + String(Date.now())
@@ -56,6 +50,7 @@ export class VoiceService {
       },
       onError: (_sid: string, _code: number, msg: string) => {
         console.error('[VoiceService] onError code=' + String(_code) + ' msg=' + msg)
+        // 有部分文字也返回
         this.resolve(this.finalText || '')
       }
     })

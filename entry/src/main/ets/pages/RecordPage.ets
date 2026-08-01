@@ -16,6 +16,8 @@ struct RecordPage {
   @State amount: string = '0'
   @State category: string = '餐饮'
   @State note: string = ''
+  @State recordDate: Date = new Date()
+  @State dateLabel: string = ''
   @State saving: boolean = false
 
   aboutToAppear() {
@@ -27,6 +29,8 @@ struct RecordPage {
     this.amount = '0'
     this.category = '餐饮'
     this.note = ''
+    this.recordDate = new Date()
+    this.dateLabel = this.formatDate(new Date())
     this.saving = false
   }
 
@@ -50,6 +54,28 @@ struct RecordPage {
     }
   }
 
+  /** 格式化日期 */
+  formatDate(d: Date): string {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
+  /** 日期选择器 */
+  openDatePicker() {
+    this.getUIContext().showDatePickerDialog({
+      start: new Date("2020-01-01"),
+      end: new Date("2030-12-31"),
+      selected: this.recordDate,
+      showTime: false,
+      onDateAccept: (val: Date) => {
+        this.recordDate = val
+        this.dateLabel = this.formatDate(val)
+      }
+    })
+  }
+
   async save() {
     if (!AuthService.isLoggedIn()) {
       promptAction.showToast({ message: '请先登录', duration: 1500 })
@@ -69,7 +95,7 @@ struct RecordPage {
       tx.amount = amt
       tx.category = this.category
       tx.note = this.note
-      tx.created_at = new Date().toISOString()
+      tx.created_at = this.recordDate.toISOString()
       await DatabaseService.insert(tx)
       promptAction.showToast({ message: '保存成功', duration: 1500 })
       router.back()
@@ -132,6 +158,21 @@ struct RecordPage {
             onChange: (cat: string) => { this.category = cat }
           })
           .padding({ left: 16, right: 16 })
+
+          // 日期选择
+          Row() {
+            Text('📅 日期').fontSize(14).fontColor('#666')
+            Blank()
+            Text(this.dateLabel).fontSize(14).fontColor('#333')
+            Text(' ▸').fontSize(14).fontColor('#ccc')
+          }
+          .width('100%')
+          .height(44)
+          .padding({ left: 16, right: 16 })
+          .borderRadius(8)
+          .backgroundColor('#f5f5f5')
+          .margin({ left: 16, right: 16, top: 12 })
+          .onClick(() => this.openDatePicker())
 
           // 备注
           TextInput({ placeholder: '备注（选填）', text: this.note })

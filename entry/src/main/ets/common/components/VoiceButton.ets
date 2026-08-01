@@ -1,7 +1,9 @@
 /**
- * 语音按钮 — 懒加载 ASR，触摸正常后恢复完整功能
+ * 语音按钮 — 权限申请 + CoreSpeechKit ASR
  */
 import { AIParseResult } from '../../model/AIParseResult'
+import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit'
+import { common } from '@kit.AbilityKit'
 
 @Component
 export struct VoiceButton {
@@ -14,6 +16,27 @@ export struct VoiceButton {
   private pressed: boolean = false
   private timer: number = -1
   private initialized: boolean = false
+  private permGranted: boolean = false  // 记住权限状态，避免重复弹窗
+
+  async requestMicPermission(): Promise<boolean> {
+    if (this.permGranted) return true
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext
+      const atManager = abilityAccessCtrl.createAtManager()
+      const result = await atManager.requestPermissionsFromUser(ctx, ['ohos.permission.MICROPHONE'])
+      const granted = result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED
+      if (!granted) {
+        if (this.onError) this.onError('需要麦克风权限才能使用语音记账')
+        return false
+      }
+      this.permGranted = true
+      return true
+    } catch (e) {
+      console.error('[VoiceButton] requestPermission failed:', JSON.stringify(e))
+      if (this.onError) this.onError('权限申请失败，请在设置中手动开启麦克风权限')
+      return false
+    }
+  }
 
   async initService(): Promise<boolean> {
     if (this.initialized) return true
@@ -30,10 +53,20 @@ export struct VoiceButton {
     }
   }
 
-  onDown(): void {
+  async onDown(): Promise<void> {
     this.pressed = true
     this.timer = setTimeout(async () => {
       if (!this.pressed) return
+
+      // 1. 先申请麦克风权限
+      const permOk = await this.requestMicPermission()
+      if (!permOk) {
+        this.pressed = false
+        this.statusText = '按住说话'
+        return
+      }
+
+      // 2. 初始化 ASR 引擎
       const ok = await this.initService()
       if (!ok) {
         this.pressed = false
@@ -41,6 +74,8 @@ export struct VoiceButton {
         if (this.onError) this.onError('语音模块加载失败')
         return
       }
+
+      // 3. 开始监听
       this.listening = true
       this.statusText = '正在听...'
       try {
@@ -69,7 +104,7 @@ export struct VoiceButton {
 
       if (!text || text.trim().length === 0) {
         this.statusText = '按住说话'
-        if (this.onError) this.onError('未识别到语音')
+        if (this.onError) this.onError('未识别到语音，请靠近麦克风再说一次')
         return
       }
 
@@ -81,7 +116,7 @@ export struct VoiceButton {
     } catch (e) {
       console.error('[VoiceButton] recognize failed:', JSON.stringify(e))
       this.statusText = '按住说话'
-      if (this.onError) this.onError('识别失败')
+      if (this.onError) this.onError('识别失败，请检查网络后重试')
     }
   }
 
