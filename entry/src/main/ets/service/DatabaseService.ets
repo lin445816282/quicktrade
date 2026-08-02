@@ -327,21 +327,28 @@ export class DatabaseService {
   static async getCategories(type?: TransactionType): Promise<Category[]> {
     const store = await getStore()
     const uid = AuthService.getCurrentUserId()
-    let sql = 'SELECT * FROM categories WHERE user_id = ? OR user_id = 0'
+    // 先查用户专属 + 全局种子，再内存去重：同名同type优先保留用户专属
+    let sql = 'SELECT * FROM categories WHERE (user_id = ? OR user_id = 0)'
     const params: (string | number)[] = [uid]
     if (type) {
       sql += ' AND type = ?'
-      params.push(type)
+      params.push(type as string)
     }
-    sql += ' ORDER BY sort_order ASC'
+    sql += ' ORDER BY user_id DESC, sort_order ASC'
     const resultSet = await store.querySql(sql, params)
+    const seen = new Set<string>()
     const list: Category[] = []
     while (resultSet.goToNextRow()) {
+      const name = resultSet.getString(resultSet.getColumnIndex('name'))
+      const catType = resultSet.getString(resultSet.getColumnIndex('type'))
+      const key = `${name}|${catType}`
+      if (seen.has(key)) continue  // 去重：已见过则跳过（user_id DESC 确保用户专属优先）
+      seen.add(key)
       list.push(buildCategory(
         resultSet.getLong(resultSet.getColumnIndex('id')),
-        resultSet.getString(resultSet.getColumnIndex('name')),
+        name,
         resultSet.getString(resultSet.getColumnIndex('icon')),
-        resultSet.getString(resultSet.getColumnIndex('type')),
+        catType,
         resultSet.getLong(resultSet.getColumnIndex('sort_order'))
       ))
     }

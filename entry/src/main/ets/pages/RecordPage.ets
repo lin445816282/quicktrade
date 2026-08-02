@@ -95,7 +95,9 @@ struct RecordPage {
       tx.amount = amt
       tx.category = this.category
       tx.note = this.note
-      tx.created_at = this.recordDate.toISOString()
+      const d = this.recordDate
+      const p = (n: number): string => String(n).padStart(2, '0')
+      tx.created_at = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
       await DatabaseService.insert(tx)
       promptAction.showToast({ message: '保存成功', duration: 1500 })
       router.back()

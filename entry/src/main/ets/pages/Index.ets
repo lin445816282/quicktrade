@@ -35,14 +35,26 @@ struct Index {
   @State showPrivacyContent: string = ''
   @State loggedIn: boolean = false
 
+  @State showDeleteDialog: boolean = false
+  @State deleteTargetId: number = 0
+  @State currentTime: string = ''
+
   aboutToAppear() {
     this.loggedIn = AuthService.isLoggedIn()
+    this.updateTime()
     this.loadData()
   }
 
   onPageShow() {
     this.loggedIn = AuthService.isLoggedIn()
+    this.updateTime()
     this.loadData()
+  }
+
+  updateTime(): void {
+    const now = new Date()
+    const p = (n: number): string => String(n).padStart(2, '0')
+    this.currentTime = `${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())} ${p(now.getHours())}:${p(now.getMinutes())}`
   }
 
   async loadData() {
@@ -179,7 +191,13 @@ struct Index {
       Column() {
         Row() {
           if (this.loggedIn) {
-            Text(`👤 ${AuthService.getCurrentUsername()}`).fontSize(13).fontColor('#666').layoutWeight(1)
+            Text(`👤 ${AuthService.getCurrentUsername()}`).fontSize(13).fontColor('#666')
+            Blank()
+            // 金色边框日期时间
+            Text(this.currentTime).fontSize(12).fontColor('#333')
+              .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+              .border({ width: 1.5, color: '#d4a017', radius: 6 })
+              .margin({ right: 6 })
             Text('退出').fontSize(13).fontColor('#e74c3c').onClick(() => this.logout())
           } else {
             Text('👤 游客').fontSize(13).fontColor('#999').layoutWeight(1)
@@ -289,6 +307,31 @@ struct Index {
         .width('100%').justifyContent(FlexAlign.Center)
       }
 
+      // 删除确认弹窗
+      if (this.showDeleteDialog) {
+        Column() {}.width('100%').height('100%').backgroundColor('#00000040')
+        Column() {
+          Column() {
+            Text('⚠️ 确认删除').fontSize(17).fontWeight(FontWeight.Bold).margin({ bottom: 12 })
+            Text('删除后无法恢复，确定要删除这条记录吗？').fontSize(14).fontColor('#666').margin({ bottom: 20 })
+            Row() {
+              Button('取消').fontSize(14).height(40).layoutWeight(1)
+                .backgroundColor('#f0f0f0').fontColor('#666').borderRadius(8)
+                .onClick((): void => { this.showDeleteDialog = false })
+              Button('删除').fontSize(14).height(40).layoutWeight(1)
+                .backgroundColor('#e74c3c').fontColor('#fff').borderRadius(8)
+                .margin({ left: 12 })
+                .onClick((): void => {
+                  this.showDeleteDialog = false
+                  this.deleteTransaction(this.deleteTargetId)
+                })
+            }.width('100%')
+          }
+          .width('80%').padding(24).backgroundColor('#fff').borderRadius(16)
+        }
+        .width('100%').justifyContent(FlexAlign.Center)
+      }
+
       if (this.showPrivacyContent !== '') {
         Column() {}.width('100%').height('100%').backgroundColor('#00000050')
           .onClick(() => { this.showPrivacyContent = '' })
@@ -341,16 +384,16 @@ struct Index {
       }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 8 })
       Text(item.amountDisplay).fontSize(18).fontWeight(FontWeight.Medium)
         .fontColor(item.isIncome ? '#27ae60' : '#333')
+      Text('🗑️').fontSize(14).fontColor('#e74c3c')
+        .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+        .border({ width: 1, color: '#e74c3c', radius: 6 })
+        .onClick((): void => {
+          this.deleteTargetId = item.id
+          this.showDeleteDialog = true
+        })
     }
     .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 12 }).backgroundColor('#fff')
     .border({ width: { bottom: 0.5 }, color: '#f0f0f0' })
-    .gesture(LongPressGesture({ duration: 500 }).onAction(() => {
-      AlertDialog.show({
-        title: '删除确认', message: '确定要删除这条记录吗？', autoCancel: true,
-        primaryButton: { value: '取消', action: () => {} },
-        secondaryButton: { value: '删除', fontColor: '#e74c3c', action: () => this.deleteTransaction(item.id) }
-      })
-    }))
   }
 
   getCategoryIcon(item: Transaction): string {

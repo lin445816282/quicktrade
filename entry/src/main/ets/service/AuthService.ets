@@ -225,6 +225,16 @@ export class AuthService {
   }
 
   private static async createDefaultCategories(store: relationalStore.RdbStore, userId: number): Promise<void> {
+    // 去重：该用户已有品类则跳过（避免重复注册/华为登录带来重复数据）
+    const check = await store.querySql('SELECT COUNT(*) as cnt FROM categories WHERE user_id = ?', [userId])
+    check.goToFirstRow()
+    const cnt = check.getLong(check.getColumnIndex('cnt'))
+    check.close()
+    if (cnt > 0) {
+      console.info('QuickTrade createDefaultCategories: user', userId, 'already has', cnt, 'categories, skipped')
+      return
+    }
+
     const expenseCats: [string, string, number][] = [
       ['餐饮', '🍜', 1], ['交通', '🚗', 2], ['购物', '🛍️', 3],
       ['日用品', '🧴', 4], ['娱乐', '🎮', 5], ['通讯', '📱', 6],
