@@ -1,0 +1,673 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ-import { User } from '../model/User';
+import { getStore } from './DatabaseService';
+import hilog from "@ohos.hilog";
+import preferences from "@ohos.data.preferences";
+import appAccount from '@ohos.account.appAccount';
+import { localISO } from '../common/utils/DateUtils';
+let currentUser = null;
+let appContext = null;
+const PREFS_NAME = 'quicktrade_settings';
+// åä¸ºå¸å·ä¸€é”®ç™»å½•ç›¸å…³å¸¸é‡
+const HUAWEI_ACCOUNT_TYPE = 'com.huawei.hwid';
+const HUAWEI_OAUTH_SCOPE = 'https://www.huawei.com/auth/account/base';
+export class AuthService {
+    /** åˆå§‹åŒ–æ—¶è®¾ contextï¼Œç”¨äº preferences */
+    static init(ctx) {
+        appContext = ctx;
+    }
+    static getCurrentUserId() {
+        return currentUser ? currentUser.id : 0;
+    }
+    static getCurrentUsername() {
+        return currentUser ? currentUser.username : '';
+    }
+    static isLoggedIn() {
+        return currentUser !== null;
+    }
+    /** å¯åŠ¨æ—¶æ¢å¤ç™»å½•æ€ */
+    static async restoreLogin() {
+        if (!appContext)
+            return false;
+        try {
+            const prefs = await preferences.getPreferences(appContext, PREFS_NAME);
+            const userId = await prefs.get('login_user_id', 0);
+            const username = await prefs.get('login_username', '');
+            const passwordHash = await prefs.get('login_password_hash', '');
+            const huaweiUid = await prefs.get('login_huawei_uid', '');
+            const createdAt = await prefs.get('login_created_at', '');
+            if (userId > 0 && username) {
+                currentUser = User.create(userId, username, passwordHash, createdAt, huaweiUid);
+                hilog.info(0x0000, 'AuthService', `restoreLogin: user=${username} id=${userId}`);
+                return true;
+            }
+        }
+        catch (e) {
+            hilog.warn(0x0000, 'AuthService', `restoreLogin failed: ${JSON.stringify(e)}`);
+        }
+        return false;
+    }
+    /** æŒä¹…åŒ–å½“å‰ç”¨æˆ·åˆ° preferences */
+    static async persistUser(user) {
+        if (!appContext)
+            return;
+        try {
+            const prefs = await preferences.getPreferences(appContext, PREFS_NAME);
+            await prefs.put('login_user_id', user.id);
+            await prefs.put('login_username', user.username);
+            await prefs.put('login_password_hash', user.password_hash);
+            await prefs.put('login_huawei_uid', user.huawei_uid || '');
+            await prefs.put('login_created_at', user.created_at);
+            await prefs.flush();
+            hilog.info(0x0000, 'AuthService', `persistUser: ${user.username}`);
+        }
+        catch (e) {
+            hilog.warn(0x0000, 'AuthService', `persistUser failed: ${JSON.stringify(e)}`);
+        }
+    }
+    /** æ³¨å†Œ */
+    static async register(username, password) {
+        const store = await getStore();
+        const existing = await store.querySql('SELECT id FROM users WHERE username = ?', [username]);
+        if (existing.goToFirstRow()) {
+            existing.close();
+            throw new Error('ç”¨æˆ·åå·²å­˜åœ¨');
+        }
+        existing.close();
+        const hash = await AuthService.hashPassword(password);
+        const now = localISO();
+        const vb = {
+            'username': username,
+            'password_hash': hash,
+            'created_at': now
+        };
+        hilog.info(0x0000, 'QuickTrade', `register: inserting user ${username}`);
+        const id = await store.insert('users', vb);
+        hilog.info(0x0000, 'QuickTrade', `register: user inserted, id=${id}`);
+        await AuthService.createDefaultCategories(store, id);
+        hilog.info(0x0000, 'QuickTrade', `register: categories created for user ${id}`);
+        const user = User.create(id, username, hash, now);
+        currentUser = user;
+        await AuthService.persistUser(user);
+        return user;
+    }
+    /** å¯†ç ç™»å½• */
+    static async login(username, password) {
+        const store = await getStore();
+        const resultSet = await store.querySql('SELECT id, username, password_hash, huawei_uid, created_at FROM users WHERE username = ?', [username]);
+        if (!resultSet.goToFirstRow()) {
+            resultSet.close();
+            throw new Error('ç”¨æˆ·åæˆ–å¯†ç é”™è¯¯');
+        }
+        const id = resultSet.getLong(resultSet.getColumnIndex('id'));
+        const storedHash = resultSet.getString(resultSet.getColumnIndex('password_hash'));
+        const huaweiUid = resultSet.getString(resultSet.getColumnIndex('huawei_uid'));
+        const createdAt = resultSet.getString(resultSet.getColumnIndex('created_at'));
+        resultSet.close();
+        const hash = await AuthService.hashPassword(password);
+        if (hash !== storedHash) {
+            throw new Error('ç”¨æˆ·åæˆ–å¯†ç é”™è¯¯');
+        }
+        const user = User.create(id, username, storedHash, createdAt, huaweiUid);
+        currentUser = user;
+        await AuthService.persistUser(user);
+        return user;
+    }
+    /** åä¸ºå¸å·ä¸€é”®ç™»å½• */
+    static async huaweiLogin() {
+        try {
+            const accountMgr = appAccount.createAppAccountManager();
+            let accounts = [];
+            try {
+                // getAllAccounts å¯èƒ½å› æƒé™/é…ç½®é—®é¢˜å¤±è´¥ï¼Œæ•è·åç»™å‹å¥½æç¤º
+                accounts = await accountMgr.getAllAccounts(HUAWEI_ACCOUNT_TYPE);
+            }
+            catch (e) {
+                hilog.error(0x0000, 'AuthService', `getAllAccounts failed: ${JSON.stringify(e)}`);
+                throw new Error('è·å–åä¸ºå¸å·å¤±è´¥ï¼Œè¯·ä½¿ç”¨å¯†ç ç™»å½•');
+            }
+            if (accounts.length === 0) {
+                throw new Error('æœªæ‰¾åˆ°åä¸ºå¸å·ï¼Œè¯·å…ˆåœ¨ç³»ç»Ÿè®¾ç½®ä¸­ç™»å½•åä¸ºå¸å·æˆ–ä½¿ç”¨å¯†ç ç™»å½•');
+            }
+            const accountName = accounts[0].name;
+            let huaweiUid = '';
+            try {
+                const tokenValue = await accountMgr.getOAuthToken(accountName, HUAWEI_ACCOUNT_TYPE, HUAWEI_OAUTH_SCOPE);
+                huaweiUid = tokenValue;
+            }
+            catch (e) {
+                hilog.error(0x0000, 'AuthService', `getOAuthToken failed: ${JSON.stringify(e)}`);
+                throw new Error('åä¸ºå¸å·æˆæƒå¤±è´¥ï¼Œè¯·åœ¨AGCä¸­é…ç½®Account Kitæˆ–ä½¿ç”¨å¯†ç ç™»å½•');
+            }
+            if (!huaweiUid) {
+                throw new Error('è·å–åä¸ºå¸å·ä¿¡æ¯å¤±è´¥');
+            }
+            hilog.info(0x0000, 'AuthService', `Huawei account uid: ${huaweiUid}`);
+            const store = await getStore();
+            const resultSet = await store.querySql('SELECT id, username, password_hash, huawei_uid, created_at FROM users WHERE huawei_uid = ?', [huaweiUid]);
+            if (resultSet.goToFirstRow()) {
+                const id = resultSet.getLong(resultSet.getColumnIndex('id'));
+                const username = resultSet.getString(resultSet.getColumnIndex('username'));
+                const storedHash = resultSet.getString(resultSet.getColumnIndex('password_hash'));
+                const createdAt = resultSet.getString(resultSet.getColumnIndex('created_at'));
+                resultSet.close();
+                const user = User.create(id, username, storedHash, createdAt, huaweiUid);
+                currentUser = user;
+                await AuthService.persistUser(user);
+                return user;
+            }
+            resultSet.close();
+            // æ–°ç”¨æˆ·ï¼Œè‡ªåŠ¨æ³¨å†Œ
+            const displayName = accountName.split('@')[0];
+            const now = localISO();
+            const newId = await store.insert('users', {
+                'username': displayName,
+                'password_hash': '',
+                'huawei_uid': huaweiUid,
+                'created_at': now
+            });
+            await AuthService.createDefaultCategories(store, newId);
+            const user = User.create(newId, displayName, '', now, huaweiUid);
+            currentUser = user;
+            await AuthService.persistUser(user);
+            return user;
+        }
+        catch (e) {
+            hilog.error(0x0000, 'AuthService', `Huawei login failed: ${JSON.stringify(e)}`);
+            const msg = e instanceof Error ? e.message : 'åä¸ºå¸å·ç™»å½•å¤±è´¥';
+            throw new Error(msg);
+        }
+    }
+    static async logout() {
+        currentUser = null;
+        // æ¸…é™¤æŒä¹…åŒ–çš„ç™»å½•æ€
+        if (appContext) {
+            try {
+                const prefs = await preferences.getPreferences(appContext, PREFS_NAME);
+                await prefs.delete('login_user_id');
+                await prefs.delete('login_username');
+                await prefs.delete('login_password_hash');
+                await prefs.delete('login_huawei_uid');
+                await prefs.delete('login_created_at');
+                await prefs.flush();
+            }
+            catch (e) {
+                hilog.warn(0x0000, 'AuthService', `clear prefs failed: ${JSON.stringify(e)}`);
+            }
+        }
+    }
+    static async createDefaultCategories(store, userId) {
+        // å»é‡ï¼šè¯¥ç”¨æˆ·å·²æœ‰å“ç±»åˆ™è·³è¿‡ï¼ˆé¿å…é‡å¤æ³¨å†Œ/åä¸ºç™»å½•å¸¦æ¥é‡å¤æ•°æ®ï¼‰
+        const check = await store.querySql('SELECT COUNT(*) as cnt FROM categories WHERE user_id = ?', [userId]);
+        check.goToFirstRow();
+        const cnt = check.getLong(check.getColumnIndex('cnt'));
+        check.close();
+        if (cnt > 0) {
+            console.info('QuickTrade createDefaultCategories: user', userId, 'already has', cnt, 'categories, skipped');
+            return;
+        }
+        const expenseCats = [
+            ['é¤é¥®', 'ğŸœ', 1], ['äº¤é€š', 'ğŸš—', 2], ['è´­ç‰©', 'ğŸ›ï¸', 3],
+            ['æ—¥ç”¨å“', 'ğŸ§´', 4], ['å¨±ä¹', 'ğŸ®', 5], ['é€šè®¯', 'ğŸ“±', 6],
+            ['å±…ä½', 'ğŸ ', 7], ['åŒ»ç–—', 'ğŸ’Š', 8], ['æ•™è‚²', 'ğŸ“š', 9], ['å…¶ä»–', 'ğŸ“Œ', 99]
+        ];
+        const incomeCats = [
+            ['å·¥èµ„', 'ğŸ’µ', 1], ['æŠ•èµ„', 'ğŸ“ˆ', 2], ['å…¼èŒ', 'ğŸ’¼', 3],
+            ['é€€æ¬¾', 'â†©ï¸', 4], ['å…¶ä»–', 'ğŸ“Œ', 99]
+        ];
+        for (let i = 0; i < expenseCats.length; i++) {
+            const c = expenseCats[i];
+            await store.insert('categories', {
+                'name': c[0], 'icon': c[1], 'type': 'expense', 'sort_order': c[2], 'user_id': userId
+            });
+        }
+        for (let i = 0; i < incomeCats.length; i++) {
+            const c = incomeCats[i];
+            await store.insert('categories', {
+                'name': c[0], 'icon': c[1], 'type': 'income', 'sort_order': c[2], 'user_id': userId
+            });
+        }
+    }
+    static async hashPassword(password) {
+        let h1 = 0xdeadbeef;
+        let h2 = 0x41c6ce57;
+        for (let i = 0; i < password.length; i++) {
+            const ch = password.charCodeAt(i);
+            h1 = Math.imul(h1 ^ ch, 2654435761);
+            h2 = Math.imul(h2 ^ ch, 1597334677);
+        }
+        for (let round = 0; round < 1000; round++) {
+            h1 = Math.imul(h1 ^ 0x9e3779b9, 2654435761);
+            h2 = Math.imul(h2 ^ (h1 >>> 0), 1597334677);
+        }
+        const hash = ((h1 >>> 0).toString(16).padStart(8, '0') +
+            (h2 >>> 0).toString(16).padStart(8, '0'));
+        console.info('QuickTrade hashPassword length:', password.length, 'hash:', hash);
+        return hash;
+    }
+}
+//# sourceMappingURL=AuthService.js.mapÂ–Ù/D:\QuickTrade\entry\src\main\ets\model\User.etsÙ<D:\QuickTrade\entry\src\main\ets\service\DatabaseService.etsÙe hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.hilog.d.tsÙp hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.data.preferences.d.tsÙr hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.account.appAccount.d.tsÙ;D:\QuickTrade\entry\src\main\ets\common\utils\DateUtils.etsÙ8D:\QuickTrade\entry\src\main\ets\service\AuthService.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¥entryÃÂ³D:\QuickTrade\entry­D:\QuickTrade¥entry¥1.0.0Ô  ’ÔrC’²hostDependencyName®hostModuleName¶../service/AuthService¥entryC­./AuthService¥entry³D:\QuickTrade\entryÃÃÚ*Å/**
+ * è®¤è¯æœåŠ¡ â€” æ³¨å†Œ/ç™»å½•/ç™»å‡º + å¯†ç å“ˆå¸Œ + åä¸ºå¸å·ä¸€é”®ç™»å½• + æŒä¹…åŒ–
+ * API 24 é€‚é…
+ */
+import relationalStore from '@ohos.data.relationalStore'
+import { User } from '../model/User'
+import { getStore } from './DatabaseService'
+import { hilog } from '@kit.PerformanceAnalysisKit'
+import { preferences } from '@kit.ArkData'
+import appAccount from '@ohos.account.appAccount'
+import { common } from '@kit.AbilityKit'
+import { localISO } from '../common/utils/DateUtils'
+
+let currentUser: User | null = null
+let appContext: common.Context | null = null
+const PREFS_NAME = 'quicktrade_settings'
+
+// åä¸ºå¸å·ä¸€é”®ç™»å½•ç›¸å…³å¸¸é‡
+const HUAWEI_ACCOUNT_TYPE = 'com.huawei.hwid'
+const HUAWEI_OAUTH_SCOPE = 'https://www.huawei.com/auth/account/base'
+
+interface AppAccountInfo {
+  name: string
+  owner: string
+}
+
+export class AuthService {
+
+  /** åˆå§‹åŒ–æ—¶è®¾ contextï¼Œç”¨äº preferences */
+  static init(ctx: common.Context): void {
+    appContext = ctx
+  }
+
+  static getCurrentUserId(): number {
+    return currentUser ? currentUser.id : 0
+  }
+
+  static getCurrentUsername(): string {
+    return currentUser ? currentUser.username : ''
+  }
+
+  static isLoggedIn(): boolean {
+    return currentUser !== null
+  }
+
+  /** å¯åŠ¨æ—¶æ¢å¤ç™»å½•æ€ */
+  static async restoreLogin(): Promise<boolean> {
+    if (!appContext) return false
+    try {
+      const prefs = await preferences.getPreferences(appContext, PREFS_NAME)
+      const userId: number = await prefs.get('login_user_id', 0) as number
+      const username: string = await prefs.get('login_username', '') as string
+      const passwordHash: string = await prefs.get('login_password_hash', '') as string
+      const huaweiUid: string = await prefs.get('login_huawei_uid', '') as string
+      const createdAt: string = await prefs.get('login_created_at', '') as string
+
+      if (userId > 0 && username) {
+        currentUser = User.create(userId, username, passwordHash, createdAt, huaweiUid)
+        hilog.info(0x0000, 'AuthService', `restoreLogin: user=${username} id=${userId}`)
+        return true
+      }
+    } catch (e) {
+      hilog.warn(0x0000, 'AuthService', `restoreLogin failed: ${JSON.stringify(e)}`)
+    }
+    return false
+  }
+
+  /** æŒä¹…åŒ–å½“å‰ç”¨æˆ·åˆ° preferences */
+  private static async persistUser(user: User): Promise<void> {
+    if (!appContext) return
+    try {
+      const prefs = await preferences.getPreferences(appContext, PREFS_NAME)
+      await prefs.put('login_user_id', user.id)
+      await prefs.put('login_username', user.username)
+      await prefs.put('login_password_hash', user.password_hash)
+      await prefs.put('login_huawei_uid', user.huawei_uid || '')
+      await prefs.put('login_created_at', user.created_at)
+      await prefs.flush()
+      hilog.info(0x0000, 'AuthService', `persistUser: ${user.username}`)
+    } catch (e) {
+      hilog.warn(0x0000, 'AuthService', `persistUser failed: ${JSON.stringify(e)}`)
+    }
+  }
+
+  /** æ³¨å†Œ */
+  static async register(username: string, password: string): Promise<User> {
+    const store = await getStore()
+    const existing = await store.querySql('SELECT id FROM users WHERE username = ?', [username])
+    if (existing.goToFirstRow()) {
+      existing.close()
+      throw new Error('ç”¨æˆ·åå·²å­˜åœ¨')
+    }
+    existing.close()
+
+    const hash = await AuthService.hashPassword(password)
+    const now = localISO()
+    const vb: relationalStore.ValuesBucket = {
+      'username': username,
+      'password_hash': hash,
+      'created_at': now
+    }
+    hilog.info(0x0000, 'QuickTrade', `register: inserting user ${username}`)
+    const id = await store.insert('users', vb)
+    hilog.info(0x0000, 'QuickTrade', `register: user inserted, id=${id}`)
+    await AuthService.createDefaultCategories(store, id)
+    hilog.info(0x0000, 'QuickTrade', `register: categories created for user ${id}`)
+
+    const user = User.create(id, username, hash, now)
+    currentUser = user
+    await AuthService.persistUser(user)
+    return user
+  }
+
+  /** å¯†ç ç™»å½• */
+  static async login(username: string, password: string): Promise<User> {
+    const store = await getStore()
+    const resultSet = await store.querySql(
+      'SELECT id, username, password_hash, huawei_uid, created_at FROM users WHERE username = ?', [username]
+    )
+    if (!resultSet.goToFirstRow()) {
+      resultSet.close()
+      throw new Error('ç”¨æˆ·åæˆ–å¯†ç é”™è¯¯')
+    }
+    const id = resultSet.getLong(resultSet.getColumnIndex('id'))
+    const storedHash = resultSet.getString(resultSet.getColumnIndex('password_hash'))
+    const huaweiUid = resultSet.getString(resultSet.getColumnIndex('huawei_uid'))
+    const createdAt = resultSet.getString(resultSet.getColumnIndex('created_at'))
+    resultSet.close()
+
+    const hash = await AuthService.hashPassword(password)
+    if (hash !== storedHash) {
+      throw new Error('ç”¨æˆ·åæˆ–å¯†ç é”™è¯¯')
+    }
+    const user = User.create(id, username, storedHash, createdAt, huaweiUid)
+    currentUser = user
+    await AuthService.persistUser(user)
+    return user
+  }
+
+  /** åä¸ºå¸å·ä¸€é”®ç™»å½• */
+  static async huaweiLogin(): Promise<User> {
+    try {
+      const accountMgr: appAccount.AppAccountManager = appAccount.createAppAccountManager()
+      let accounts: AppAccountInfo[] = []
+      try {
+        // getAllAccounts å¯èƒ½å› æƒé™/é…ç½®é—®é¢˜å¤±è´¥ï¼Œæ•è·åç»™å‹å¥½æç¤º
+        accounts = await accountMgr.getAllAccounts(HUAWEI_ACCOUNT_TYPE) as AppAccountInfo[]
+      } catch (e) {
+        hilog.error(0x0000, 'AuthService', `getAllAccounts failed: ${JSON.stringify(e)}`)
+        throw new Error('è·å–åä¸ºå¸å·å¤±è´¥ï¼Œè¯·ä½¿ç”¨å¯†ç ç™»å½•')
+      }
+      if (accounts.length === 0) {
+        throw new Error('æœªæ‰¾åˆ°åä¸ºå¸å·ï¼Œè¯·å…ˆåœ¨ç³»ç»Ÿè®¾ç½®ä¸­ç™»å½•åä¸ºå¸å·æˆ–ä½¿ç”¨å¯†ç ç™»å½•')
+      }
+      const accountName: string = accounts[0].name
+      let huaweiUid: string = ''
+      try {
+        const tokenValue: string = await accountMgr.getOAuthToken(
+          accountName, HUAWEI_ACCOUNT_TYPE, HUAWEI_OAUTH_SCOPE
+        ) as string
+        huaweiUid = tokenValue
+      } catch (e) {
+        hilog.error(0x0000, 'AuthService', `getOAuthToken failed: ${JSON.stringify(e)}`)
+        throw new Error('åä¸ºå¸å·æˆæƒå¤±è´¥ï¼Œè¯·åœ¨AGCä¸­é…ç½®Account Kitæˆ–ä½¿ç”¨å¯†ç ç™»å½•')
+      }
+      if (!huaweiUid) {
+        throw new Error('è·å–åä¸ºå¸å·ä¿¡æ¯å¤±è´¥')
+      }
+      hilog.info(0x0000, 'AuthService', `Huawei account uid: ${huaweiUid}`)
+
+      const store = await getStore()
+      const resultSet = await store.querySql(
+        'SELECT id, username, password_hash, huawei_uid, created_at FROM users WHERE huawei_uid = ?', [huaweiUid]
+      )
+      if (resultSet.goToFirstRow()) {
+        const id = resultSet.getLong(resultSet.getColumnIndex('id'))
+        const username = resultSet.getString(resultSet.getColumnIndex('username'))
+        const storedHash = resultSet.getString(resultSet.getColumnIndex('password_hash'))
+        const createdAt = resultSet.getString(resultSet.getColumnIndex('created_at'))
+        resultSet.close()
+        const user = User.create(id, username, storedHash, createdAt, huaweiUid)
+        currentUser = user
+        await AuthService.persistUser(user)
+        return user
+      }
+      resultSet.close()
+
+      // æ–°ç”¨æˆ·ï¼Œè‡ªåŠ¨æ³¨å†Œ
+      const displayName: string = accountName.split('@')[0]
+      const now = localISO()
+      const newId = await store.insert('users', {
+        'username': displayName,
+        'password_hash': '',
+        'huawei_uid': huaweiUid,
+        'created_at': now
+      } as relationalStore.ValuesBucket)
+      await AuthService.createDefaultCategories(store, newId)
+      const user = User.create(newId, displayName, '', now, huaweiUid)
+      currentUser = user
+      await AuthService.persistUser(user)
+      return user
+    } catch (e) {
+      hilog.error(0x0000, 'AuthService', `Huawei login failed: ${JSON.stringify(e)}`)
+      const msg = e instanceof Error ? e.message : 'åä¸ºå¸å·ç™»å½•å¤±è´¥'
+      throw new Error(msg)
+    }
+  }
+
+  static async logout(): Promise<void> {
+    currentUser = null
+    // æ¸…é™¤æŒä¹…åŒ–çš„ç™»å½•æ€
+    if (appContext) {
+      try {
+        const prefs = await preferences.getPreferences(appContext, PREFS_NAME)
+        await prefs.delete('login_user_id')
+        await prefs.delete('login_username')
+        await prefs.delete('login_password_hash')
+        await prefs.delete('login_huawei_uid')
+        await prefs.delete('login_created_at')
+        await prefs.flush()
+      } catch (e) {
+        hilog.warn(0x0000, 'AuthService', `clear prefs failed: ${JSON.stringify(e)}`)
+      }
+    }
+  }
+
+  private static async createDefaultCategories(store: relationalStore.RdbStore, userId: number): Promise<void> {
+    // å»é‡ï¼šè¯¥ç”¨æˆ·å·²æœ‰å“ç±»åˆ™è·³è¿‡ï¼ˆé¿å…é‡å¤æ³¨å†Œ/åä¸ºç™»å½•å¸¦æ¥é‡å¤æ•°æ®ï¼‰
+    const check = await store.querySql('SELECT COUNT(*) as cnt FROM categories WHERE user_id = ?', [userId])
+    check.goToFirstRow()
+    const cnt = check.getLong(check.getColumnIndex('cnt'))
+    check.close()
+    if (cnt > 0) {
+      console.info('QuickTrade createDefaultCategories: user', userId, 'already has', cnt, 'categories, skipped')
+      return
+    }
+
+    const expenseCats: [string, string, number][] = [
+      ['é¤é¥®', 'ğŸœ', 1], ['äº¤é€š', 'ğŸš—', 2], ['è´­ç‰©', 'ğŸ›ï¸', 3],
+      ['æ—¥ç”¨å“', 'ğŸ§´', 4], ['å¨±ä¹', 'ğŸ®', 5], ['é€šè®¯', 'ğŸ“±', 6],
+      ['å±…ä½', 'ğŸ ', 7], ['åŒ»ç–—', 'ğŸ’Š', 8], ['æ•™è‚²', 'ğŸ“š', 9], ['å…¶ä»–', 'ğŸ“Œ', 99]
+    ]
+    const incomeCats: [string, string, number][] = [
+      ['å·¥èµ„', 'ğŸ’µ', 1], ['æŠ•èµ„', 'ğŸ“ˆ', 2], ['å…¼èŒ', 'ğŸ’¼', 3],
+      ['é€€æ¬¾', 'â†©ï¸', 4], ['å…¶ä»–', 'ğŸ“Œ', 99]
+    ]
+    for (let i = 0; i < expenseCats.length; i++) {
+      const c = expenseCats[i]
+      await store.insert('categories', {
+        'name': c[0], 'icon': c[1], 'type': 'expense', 'sort_order': c[2], 'user_id': userId
+      } as relationalStore.ValuesBucket)
+    }
+    for (let i = 0; i < incomeCats.length; i++) {
+      const c = incomeCats[i]
+      await store.insert('categories', {
+        'name': c[0], 'icon': c[1], 'type': 'income', 'sort_order': c[2], 'user_id': userId
+      } as relationalStore.ValuesBucket)
+    }
+  }
+
+  static async hashPassword(password: string): Promise<string> {
+    let h1 = 0xdeadbeef
+    let h2 = 0x41c6ce57
+    for (let i = 0; i < password.length; i++) {
+      const ch = password.charCodeAt(i)
+      h1 = Math.imul(h1 ^ ch, 2654435761)
+      h2 = Math.imul(h2 ^ ch, 1597334677)
+    }
+    for (let round = 0; round < 1000; round++) {
+      h1 = Math.imul(h1 ^ 0x9e3779b9, 2654435761)
+      h2 = Math.imul(h2 ^ (h1 >>> 0), 1597334677)
+    }
+    const hash = ((h1 >>> 0).toString(16).padStart(8, '0') +
+                  (h2 >>> 0).toString(16).padStart(8, '0'))
+    console.info('QuickTrade hashPassword length:', password.length, 'hash:', hash)
+    return hash
+  }
+}
+ÀÔrD–«@ohos.hilog¶@ohos.data.preferences¸@ohos.account.appAccount±./DatabaseService­../model/User¹../common/utils/DateUtilsÔrE—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÃÙe hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.hilog.d.tsAÃªoh-resolveÂEAÃÙp hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.data.preferences.d.tsAÃªoh-resolveÂEAÃÙr hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.account.appAccount.d.tsÔrF‘¯hostModulesInfo‘C¸@ohos.account.appAccount¥entryÃªoh-resolveÂEAÂÙ<D:\QuickTrade\entry\src\main\ets\service\DatabaseService.etsAÃªoh-resolveÂEAÂÙ/D:\QuickTrade\entry\src\main\ets\model\User.etsAÃªoh-resolveÂEAÂÙ;D:\QuickTrade\entry\src\main\ets\common\utils\DateUtils.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings®AuthService.js ‘¯AuthService.etsÜ ÷˜”   ” ”	 	” ” ” ”$ $”% $˜”   ” ”	 	” ” ” ”, ,”- ,–”   ” 	” ” ” 3”  3–”   ” 	” ” ”0 *”1 *–”  	 ” 	” 	” 	”1 	1”2 	1˜”   ” ”	 	” ” ” ”4 4”5 4–”   ” ” ” ” #” #–”   ” ” ” (” ,” ,–”   ” ” ” ”( (”) (’”   ” –”   ” ” ” ”- -”. -–”   ” ” ” ”ÌE ÌE”ÌF ÌE””   ” ” ” ’” ”' %–” ”
+ ” 	” ” ” !•” ” ” ” ” ’” ” ”” !”
+ !” !	” !” "” "” "” "” "” "”( "$”) "%”+ "'”, "(”- ")”. "*”/ "+”0 "+’” #” #”” %”
+ %” %	” %” &” &” &” &” &” &”( &$”) &%”1 &-”2 &.”3 &/”4 &0”6 &2”7 &2’” '” '”” )”
+ )” )	” )–” *” *” *” *”# *”$ *’” +” +’” -” -–” .”
+ .” .	” .” .” .”” /” /” /	” /”” /” /” /!” /!’” 0” 0” 1” 1” 1” 1”  1”+ 1%”, 1&”: 14”; 15”ÌE 1?”ÌG 1ÌA”ÌQ 1ÌK”ÌR 1ÌL”ÌS 1ÌL” 2” 2” 2” 2”! 2#”& 2(”' 2)”* 2,”+ 2-”: 2<”< 2>”= 2?”> 2ÌJ”? 2ÌJ” 3” 3” 3” 3”# 3%”( 3*”) 3+”, 3.”- 3/”= 3?”? 3ÌA”ÌA 3ÌC”ÌB 3ÌN”ÌC 3ÌN” 4” 4” 4”! 4#”' 4)”, 4.”- 4/”0 42”1 43”ÌF 4ÌH”ÌH 4ÌJ”ÌJ 4ÌL”ÌK 4ÌW”ÌL 4ÌW” 5” 5” 5” 5 ”$ 5&”) 5+”* 5,”- 5/”. 50”Ì@ 5ÌB”ÌB 5ÌD”ÌD 5ÌF”ÌE 5ÌQ”ÌF 5ÌQ” 6” 6” 6” 6 ”$ 6&”) 6+”* 6,”- 6/”. 60”Ì@ 6ÌB”ÌB 6ÌD”ÌD 6ÌF”ÌE 6ÌQ”ÌF 6ÌQ˜” 8” 8
+” 8” 8” 8” 8”& 8 ”( 8"Ü ” 9” 9” 9”" 9”# 9”) 9!”* 9"”0 9(”2 9*”: 92”< 94”ÌH 9Ì@”ÌJ 9ÌB”ÌS 9ÌK”ÌU 9ÌM”Ì^ 9ÌV”Ì_ 9ÌW”Ì` 9ÌWÜ ” :” :” :” :” :”! :”# :”0 :(”2 :*”ÌH :Ì@”ÌP :ÌH”ÌW :ÌO”Ì] :ÌU”Ì_ :ÌW”Ì` :ÌX”Ìa :ÌX”” ;” ;” ;” ;‘” <‘”	 =”” =” =” =” =Ü ” >” >” >” >” >” >” >”, >&”. >(”ÌF >Ì@”ÌJ >ÌD”ÌK >ÌE”ÌT >ÌN”ÌU >ÌO”ÌV >ÌP”ÌW >ÌQ”ÌY >ÌS”ÌZ >ÌT”Ì[ >ÌT‘”	 ?”” Ì@” Ì@” Ì@” Ì@’” ÌA” ÌA’” ÌC” ÌC˜” ÌD
+”
+ ÌD” ÌD” ÌD” ÌD” ÌD"” ÌD#”! ÌD-”” ÌE” ÌE” ÌE	” ÌE’” ÌE” ÌE’” ÌF” ÌF” ÌG” ÌG” ÌG” ÌG”  ÌG”+ ÌG%”, ÌG&”: ÌG4”; ÌG5”ÌE ÌG?”ÌG ÌGÌA”ÌQ ÌGÌK”ÌR ÌGÌL”ÌS ÌGÌL” ÌH” ÌH” ÌH” ÌH” ÌH” ÌH”+ ÌH%”- ÌH'”1 ÌH+”2 ÌH,”4 ÌH.”5 ÌH/”6 ÌH/” ÌI” ÌI” ÌI” ÌI” ÌI” ÌI”, ÌI&”. ÌI(”2 ÌI,”3 ÌI-”; ÌI5”< ÌI6”= ÌI6” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ”1 ÌJ+”3 ÌJ-”7 ÌJ1”8 ÌJ2”ÌE ÌJ?”ÌF ÌJÌ@”ÌG ÌJÌ@Ÿ” ÌK” ÌK” ÌK” ÌK” ÌK” ÌK”. ÌK(”0 ÌK*”4 ÌK.”5 ÌK/”? ÌK9”ÌC ÌK=”ÌE ÌK?”ÌF ÌKÌ@”ÌG ÌKÌ@” ÌL” ÌL” ÌL” ÌL” ÌL” ÌL”. ÌL(”0 ÌL*”4 ÌL.”5 ÌL/”? ÌL9”Ì@ ÌL:”ÌA ÌL:—” ÌM” ÌM” ÌM” ÌM” ÌM” ÌM”  ÌMÜ ” ÌN” ÌN” ÌN” ÌN” ÌN” ÌN” ÌN”, ÌN&”. ÌN(”> ÌN8”ÌB ÌN<”ÌC ÌN=”ÌK ÌNÌE”ÌM ÌNÌG”ÌN ÌNÌH”ÌO ÌNÌH‘”	 ÌO”” ÌO” ÌO” ÌO” ÌOÜ ” ÌP” ÌP” ÌP” ÌP” ÌP” ÌP” ÌP”, ÌP&”. ÌP(”ÌE ÌP?”ÌI ÌPÌC”ÌJ ÌPÌD”ÌS ÌPÌM”ÌT ÌPÌN”ÌU ÌPÌO”ÌV ÌPÌP”ÌX ÌPÌR”ÌY ÌPÌS”ÌZ ÌPÌS‘”	 ÌQ’” ÌR” ÌR’” ÌT” ÌTš” ÌU”
+ ÌU” ÌU	” ÌU” ÌU” ÌU” ÌU”" ÌU(”$ ÌU*”, ÌU:˜” ÌV” ÌV
+” ÌV” ÌV” ÌV”$ ÌV ”& ÌV"”' ÌV"Ü ” ÌW” ÌW
+” ÌW” ÌW” ÌW”$ ÌW ”% ÌW!”- ÌW)”. ÌW*”ÌW ÌWÌS”ÌY ÌWÌU”ÌZ ÌWÌV”Ìb ÌWÌ^”Ìc ÌWÌ_”Ìd ÌWÌ`”Ìe ÌWÌ`—” ÌX” ÌX” ÌX” ÌX”! ÌX”# ÌX”% ÌX!–” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY˜” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ”$ ÌZ”% ÌZ”& ÌZ‘”	 Ì[–” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\œ” Ì^” Ì^
+” Ì^” Ì^” Ì^”& Ì^"”' Ì^#”3 Ì^/”4 Ì^0”< Ì^8”= Ì^9”> Ì^9—” Ì_” Ì_
+” Ì_” Ì_” Ì_” Ì_” Ì_”” Ì`” Ì`
+” Ì`” Ì`-”” Ìa” Ìa” Ìa”  Ìa”” Ìb” Ìb” Ìb”! Ìb”” Ìc” Ìc” Ìc” Ìc’”	 Ìd”
+ Ìd” Ìe” Ìe	” Ìe
+” Ìe” Ìe” Ìe” Ìe”' Ìe#”) Ìe%”ÌE ÌeÌA”ÌM ÌeÌI”ÌO ÌeÌK”ÌP ÌeÌL”ÌQ ÌeÌL” Ìf” Ìf
+” Ìf” Ìf” Ìf” Ìf” Ìf”% Ìf!”& Ìf"”- Ìf)”/ Ìf+”1 Ìf-”2 Ìf.”3 Ìf.” Ìg” Ìg	” Ìg
+” Ìg” Ìg” Ìg” Ìg”' Ìg#”) Ìg%”ÌH ÌgÌD”ÌJ ÌgÌF”ÌL ÌgÌH”ÌM ÌgÌI”ÌN ÌgÌI›” Ìh” Ìh
+” Ìh” Ìh”1 Ìh-”2 Ìh.”7 Ìh3”9 Ìh5”; Ìh7”< Ìh8”= Ìh8” Ìi” Ìi	” Ìi
+” Ìi” Ìi” Ìi” Ìi”' Ìi#”) Ìi%”ÌR ÌiÌN”ÌT ÌiÌP”ÌV ÌiÌR”ÌW ÌiÌS”ÌX ÌiÌSÜ ” Ìk” Ìk
+” Ìk” Ìk” Ìk” Ìk”  Ìk”! Ìk”# Ìk”% Ìk!”- Ìk)”/ Ìk+”3 Ìk/”5 Ìk1”8 Ìk4”9 Ìk5”: Ìk5•” Ìl” Ìl” Ìl” Ìl” Ìl™” Ìm” Ìm
+” Ìm” Ìm”% Ìm!”& Ìm"”* Ìm&”+ Ìm'”, Ìm'”” Ìn” Ìn” Ìn” Ìn’” Ìo” Ìo’” Ìq” Ìqš” Ìr”
+ Ìr” Ìr	” Ìr” Ìr” Ìr” Ìr” Ìr%”! Ìr'”) Ìr7˜” Ìs” Ìs
+” Ìs” Ìs” Ìs”$ Ìs ”& Ìs"”' Ìs"Ü ” Ìt” Ìt
+” Ìt” Ìt”  Ìt”% Ìt!”& Ìt"”. Ìt*”/ Ìu”Ì‰ ÌuÌ`”Ì‹ ÌuÌb”ÌŒ ÌuÌc”Ì” ÌuÌk”Ì• ÌuÌl”Ì– Ìv”Ì— Ìv˜” Ìw” Ìw” Ìw	” Ìw” Ìw”# Ìw”% Ìw!”' Ìw#–” Ìx” Ìx” Ìx” Ìx” Ìx” Ìx˜” Ìy” Ìy” Ìy” Ìy” Ìy”& Ìy ”' Ìy!”( Ìy!‘”	 ÌzÜ ” Ì{” Ì{
+” Ì{” Ì{” Ì{” Ì{”$ Ì{ ”% Ì{!”. Ì{*”/ Ì{+”= Ì{9”> Ì{:”ÌB Ì{>”ÌC Ì{?”ÌD Ì{Ì@”ÌE Ì{Ì@Ü ” Ì|” Ì|
+” Ì|” Ì|”$ Ì| ”% Ì|!”. Ì|*”/ Ì|+”8 Ì|4”9 Ì|5”ÌG Ì|ÌC”ÌH Ì|ÌD”ÌW Ì|ÌS”ÌX Ì|ÌT”ÌY Ì|ÌU”ÌZ Ì|ÌUÜ ” Ì}” Ì}
+” Ì}” Ì}”# Ì}”$ Ì} ”- Ì})”. Ì}*”7 Ì}3”8 Ì}4”ÌF Ì}ÌB”ÌG Ì}ÌC”ÌS Ì}ÌO”ÌT Ì}ÌP”ÌU Ì}ÌQ”ÌV Ì}ÌQÜ ” Ì~” Ì~
+” Ì~” Ì~”# Ì~”$ Ì~ ”- Ì~)”. Ì~*”7 Ì~3”8 Ì~4”ÌF Ì~ÌB”ÌG Ì~ÌC”ÌS Ì~ÌO”ÌT Ì~ÌP”ÌU Ì~ÌQ”ÌV Ì~ÌQ–” Ì” Ì” Ì” Ì” Ì” Ìœ” Ì” Ì
+” Ì” Ì” Ì”& Ì"”' Ì#”3 Ì/”4 Ì0”< Ì8”= Ì9”> Ì9–” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚”! Ì‚˜” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ”& Ìƒ ”' Ìƒ!”( Ìƒ!‘”	 Ì„Ü ” Ì…” Ì…
+” Ì…” Ì…” Ì…” Ì…”  Ì…”! Ì…”# Ì…”% Ì…!”- Ì…)”/ Ì…+”9 Ì…5”; Ì…7”ÌD Ì…Ì@”ÌF Ì…ÌB”ÌO Ì…ÌK”ÌP Ì…ÌL”ÌQ Ì…ÌL•” Ì†” Ì†” Ì†” Ì†” Ì†™” Ì‡” Ì‡
+” Ì‡” Ì‡”% Ì‡!”& Ì‡"”* Ì‡&”+ Ì‡'”, Ì‡'”” Ìˆ” Ìˆ” Ìˆ” Ìˆ’” Ì‰” Ì‰’” Ì‹” Ì‹–” ÌŒ”
+ ÌŒ” ÌŒ	” ÌŒ” ÌŒ” ÌŒ’” Ì” Ì™” Ì” Ì” Ì” Ì7”) ÌÌA”* ÌÌB”ÌA ÌÌY”ÌC ÌÌ[”ÌD ÌÌ[–” Ì” Ì
+” Ì” Ì'” Ì)” Ì)’” Ì” Ì
+’” Ì‘”7 Ì‘/›” Ì’” Ì’” Ì’”! Ì’”+ Ì’#”, Ì’$”: Ì’2”; Ì’3”ÌN Ì’ÌF”ÌO Ì’Ì[”ÌP Ì’Ì[‘” Ì“”” Ì“” Ì“” Ì“” Ì“Ü ” Ì”” Ì”” Ì”” Ì”” Ì””" Ì””$ Ì””1 Ì”)”3 Ì”+”ÌM Ì”ÌE”ÌQ Ì”ÌI”ÌR Ì”ÌJ”Ì[ Ì”ÌS”Ì\ Ì”ÌT”Ì] Ì”ÌU”Ì^ Ì”ÌV”Ì` Ì”ÌX”Ìa Ì”ÌY”Ìb Ì”ÌY˜” Ì•” Ì•” Ì•” Ì•”  Ì•”2 Ì•*”3 Ì•+”4 Ì•+‘” Ì–˜” Ì—” Ì—
+” Ì—” Ì—” Ì—”$ Ì—”% Ì—”' Ì—!˜” Ì˜” Ì˜” Ì˜” Ì˜”  Ì˜”? Ì˜7”Ì@ Ì˜8”ÌA Ì˜8‘” Ì™›” Ìš” Ìš” Ìš”  Ìš"”( Ìš*”) Ìš+”* Ìš,”+ Ìš-”, Ìš.”0 Ìš2”1 Ìš2–” Ì›” Ì›
+” Ì›” Ì›” Ì› ” Ì› ’” Ìœ” Ìœ
+Ü ” Ì” Ì”  Ì”# Ì#”) Ì)”3 Ì3”4 Ì4”ÌA ÌÌA”ÌB Ì
+”ÌM Ì”ÌO Ì”Ìb Ì*”Ìd Ì,”Ìv Ì>”Ìw ÌŸ”Ìx ÌŸ•” Ì ” Ì ” Ì ”& Ì ”' Ì ‘” Ì¡”” Ì¡” Ì¡” Ì¡” Ì¡Ü ” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢”" Ì¢”$ Ì¢”1 Ì¢)”3 Ì¢+”ÌL Ì¢ÌD”ÌP Ì¢ÌH”ÌQ Ì¢ÌI”ÌZ Ì¢ÌR”Ì[ Ì¢ÌS”Ì\ Ì¢ÌT”Ì] Ì¢ÌU”Ì_ Ì¢ÌW”Ì` Ì¢ÌX”Ìa Ì¢ÌX˜” Ì£” Ì£” Ì£” Ì£”  Ì£”ÌE Ì£=”ÌF Ì£>”ÌG Ì£>‘” Ì¤•” Ì¥” Ì¥
+” Ì¥” Ì¥” Ì¥˜” Ì¦” Ì¦” Ì¦” Ì¦”  Ì¦”, Ì¦$”- Ì¦%”. Ì¦%‘” Ì§” Ì¨” Ì¨” Ì¨” Ì¨” Ì¨” Ì¨” Ì¨”, Ì¨&”. Ì¨(”ÌE Ì¨?”ÌN Ì¨ÌH”ÌP Ì¨ÌJ”ÌQ Ì¨ÌK”ÌR Ì¨ÌK˜” Ìª” Ìª” Ìª” Ìª”  Ìª”( Ìª"”* Ìª$”+ Ìª$Ü ” Ì«” Ì«” Ì«” Ì«”$ Ì«”) Ì«#”* Ì«$”2 Ì«,”3 Ì¬”Ì Ì¬Ìd”Ì‘ Ì¬Ìf”Ì’ Ì¬Ìg”Ì› Ì¬Ìp”Ìœ Ì¬Ìq”Ì Ì­”Ì Ì­—” Ì®” Ì®
+” Ì®” Ì®”& Ì® ”( Ì®"”* Ì®$Ü ” Ì¯” Ì¯” Ì¯” Ì¯”$ Ì¯”% Ì¯”, Ì¯$”- Ì¯%”6 Ì¯.”7 Ì¯/”ÌE Ì¯=”ÌF Ì¯>”ÌJ Ì¯ÌB”ÌK Ì¯ÌC”ÌL Ì¯ÌD”ÌM Ì¯ÌDÜ ” Ì°” Ì°” Ì°”! Ì°”* Ì°"”+ Ì°#”4 Ì°,”5 Ì°-”> Ì°6”? Ì°7”ÌM Ì°ÌE”ÌN Ì°ÌF”ÌX Ì°ÌP”ÌY Ì°ÌQ”ÌZ Ì°ÌR”Ì[ Ì°ÌRÜ ” Ì±” Ì±”  Ì±”# Ì±”, Ì±$”- Ì±%”6 Ì±.”7 Ì±/”Ì@ Ì±8”ÌA Ì±9”ÌO Ì±ÌG”ÌP Ì±ÌH”Ì_ Ì±ÌW”Ì` Ì±ÌX”Ìa Ì±ÌY”Ìb Ì±ÌYÜ ” Ì²” Ì²” Ì²”" Ì²”+ Ì²#”, Ì²$”5 Ì²-”6 Ì².”? Ì²7”Ì@ Ì²8”ÌN Ì²ÌF”ÌO Ì²ÌG”Ì[ Ì²ÌS”Ì\ Ì²ÌT”Ì] Ì²ÌU”Ì^ Ì²ÌU–” Ì³” Ì³” Ì³” Ì³”! Ì³”" Ì³Ü ” Ì´” Ì´” Ì´” Ì´”! Ì´”" Ì´”( Ì´ ”) Ì´!”+ Ì´#”- Ì´%”5 Ì´-”7 Ì´/”ÌA Ì´9”ÌC Ì´;”ÌL Ì´ÌD”ÌN Ì´ÌF”ÌW Ì´ÌO”ÌX Ì´ÌP”ÌY Ì´ÌP•” Ìµ” Ìµ” Ìµ”" Ìµ”# Ìµ™” Ì¶” Ì¶”! Ì¶”" Ì¶”- Ì¶%”. Ì¶&”2 Ì¶*”3 Ì¶+”4 Ì¶+”” Ì·” Ì·” Ì·” Ì·‘” Ì¸–” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹’” Ì»” Ì»” Ì¼” Ì¼” Ì¼”  Ì¼"”+ Ì¼-”, Ì¼.”1 Ì¼3”2 Ì¼4”5 Ì¼7”6 Ì¼8”7 Ì¼9”8 Ì¼:”9 Ì¼;”: Ì¼;—” Ì½” Ì½” Ì½” Ì½”  Ì½”" Ì½”# Ì½›” Ì¾” Ì¾” Ì¾” Ì¾”  Ì¾”% Ì¾”& Ì¾ ”, Ì¾&”- Ì¾'”4 Ì¾.”6 Ì¾0”” Ì¿” Ì¿” Ì¿”' Ì¿”” ÌÀ” ÌÀ”! ÌÀ”# ÌÀ”” ÌÁ” ÌÁ” ÌÁ”' ÌÁ”” ÌÂ” ÌÂ” ÌÂ”! ÌÂ“” ÌÃ'” ÌÃ(” ÌÃ(›” ÌÄ” ÌÄ” ÌÄ” ÌÄ”5 ÌÄ/”6 ÌÄ0”; ÌÄ5”= ÌÄ7”ÌB ÌÄ<”ÌC ÌÄ=”ÌD ÌÄ=Ü ” ÌÅ” ÌÅ” ÌÅ” ÌÅ” ÌÅ” ÌÅ”$ ÌÅ”% ÌÅ”* ÌÅ$”, ÌÅ&”7 ÌÅ1”9 ÌÅ3”; ÌÅ5”= ÌÅ7”Ì@ ÌÅ:”ÌB ÌÅ<”ÌK ÌÅÌE”ÌL ÌÅÌF”ÌM ÌÅÌF•” ÌÆ” ÌÆ” ÌÆ” ÌÆ” ÌÆ™” ÌÇ” ÌÇ” ÌÇ” ÌÇ”) ÌÇ#”* ÌÇ$”. ÌÇ(”/ ÌÇ)”0 ÌÇ)”” ÌÈ” ÌÈ” ÌÈ” ÌÈ‘”	 ÌÉ”” ÌÉ” ÌÉ” ÌÉ” ÌÉÜ ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ”  ÌÊ”- ÌÊ'”/ ÌÊ)”ÌG ÌÊÌA”ÌK ÌÊÌE”ÌL ÌÊÌF”ÌU ÌÊÌO”ÌV ÌÊÌP”ÌW ÌÊÌQ”ÌX ÌÊÌR”ÌZ ÌÊÌT”Ì[ ÌÊÌU”Ì\ ÌÊÌUÜ ” ÌË” ÌË” ÌË” ÌË” ÌË”% ÌË”* ÌË$”+ ÌË%”, ÌË&”- ÌË'”. ÌË(”/ ÌË)”6 ÌË0”7 ÌË1”8 ÌË2”9 ÌË3”ÌC ÌË=”ÌD ÌË=˜” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ”  ÌÌ”! ÌÌ‘”	 ÌÍ’” ÌÎ” ÌÎ–” ÌĞ”
+ ÌĞ” ÌĞ	” ÌĞ” ÌĞ” ÌĞ•” ÌÑ” ÌÑ” ÌÑ” ÌÑ” ÌÑ’” ÌÒ” ÌÒ”” ÌÓ” ÌÓ” ÌÓ” ÌÓ’” ÌÔ” ÌÔ
+” ÌÕ” ÌÕ” ÌÕ” ÌÕ”$ ÌÕ”/ ÌÕ'”0 ÌÕ(”> ÌÕ6”? ÌÕ7”ÌI ÌÕÌA”ÌK ÌÕÌC”ÌU ÌÕÌM”ÌV ÌÕÌN”ÌW ÌÕÌN™” ÌÖ” ÌÖ” ÌÖ” ÌÖ”" ÌÖ”# ÌÖ”2 ÌÖ*”3 ÌÖ+”4 ÌÖ+™” Ì×” Ì×” Ì×” Ì×”" Ì×”# Ì×”3 Ì×+”4 Ì×,”5 Ì×,™” ÌØ” ÌØ” ÌØ” ÌØ”" ÌØ”# ÌØ”8 ÌØ0”9 ÌØ1”: ÌØ1™” ÌÙ” ÌÙ” ÌÙ” ÌÙ”" ÌÙ”# ÌÙ”5 ÌÙ-”6 ÌÙ.”7 ÌÙ.™” ÌÚ” ÌÚ” ÌÚ” ÌÚ”" ÌÚ”# ÌÚ”5 ÌÚ-”6 ÌÚ.”7 ÌÚ.—” ÌÛ” ÌÛ” ÌÛ” ÌÛ”! ÌÛ”# ÌÛ”$ ÌÛ‘” ÌÜ”” ÌÜ” ÌÜ” ÌÜ” ÌÜÜ ” Ìİ” Ìİ” Ìİ” Ìİ” Ìİ”! Ìİ”# Ìİ”0 Ìİ(”2 Ìİ*”ÌI ÌİÌA”ÌM ÌİÌE”ÌN ÌİÌF”ÌW ÌİÌO”ÌX ÌİÌP”ÌY ÌİÌQ”ÌZ ÌİÌR”Ì\ ÌİÌT”Ì] ÌİÌU”Ì^ ÌİÌU‘” ÌŞ‘”	 Ìß’” Ìà” Ìàš” Ìâ
+”
+ Ìâ” Ìâ” Ìâ” Ìâ”( Ìâ.”) Ìâ/”. ÌâÌN”0 ÌâÌP”6 ÌâÌ^’” Ìã”+ Ìã'Ü ” Ìä” Ìä
+” Ìä” Ìä” Ìä”! Ìä”" Ìä”* Ìä&”+ Ìä'”Ìe ÌäÌa”Ìg ÌäÌc”Ìh ÌäÌd”Ìn ÌäÌj”Ìo ÌäÌk”Ìp ÌäÌl”Ìq ÌäÌl–” Ìå” Ìå	” Ìå
+” Ìå” Ìå” ÌåÜ ” Ìæ” Ìæ
+” Ìæ” Ìæ” Ìæ” Ìæ”! Ìæ”" Ìæ”' Ìæ#”( Ìæ$”6 Ìæ2”7 Ìæ3”< Ìæ8”= Ìæ9”> Ìæ:”? Ìæ:–” Ìç” Ìç	” Ìç
+” Ìç” Ìç” Ìç–” Ìè” Ìè” Ìè” Ìè” Ìè” ÌèÜ ” Ìé” Ìé” Ìé” Ìé” Ìé”ÌC Ìé=”ÌE Ìé?”ÌK ÌéÌE”ÌM ÌéÌG”ÌZ ÌéÌT”Ì\ ÌéÌV”Ì_ ÌéÌY”Ìa ÌéÌ[”Ìv ÌéÌp”Ìw ÌéÌq”Ìx ÌéÌq’” Ìê” Ìê‘”	 Ìë”” Ìí” Ìí
+” Ìí” Ìí4Ü ” Ìî” Ìî” Ìî” Ìî” Ìî” Ìî” Ìî” Ìî” Ìî” Ìî”" Ìî”$ Ìî”( Ìî"”* Ìî$”+ Ìî%”, Ìî&”. Ìî(”/ Ìî)”3 Ìî-”5 Ìî/”: Ìî4”< Ìî6”= Ìî7”> Ìî8Ü ” Ìï” Ìï” Ìï” Ìï” Ìï” Ìï” Ìï” Ìï” Ìï” Ìï”# Ìï”% Ìï”) Ìï#”+ Ìï%”, Ìï&”- Ìï'”/ Ìï)”0 Ìï*”4 Ìï.”6 Ìï0”: Ìï4”< Ìï6”= Ìï7”> Ìï8Ü  ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ”" Ìğ”$ Ìğ”( Ìğ"”* Ìğ$”+ Ìğ%”, Ìğ&”. Ìğ(”/ Ìğ)”3 Ìğ-”5 Ìğ/”9 Ìğ3”; Ìğ5”< Ìğ6”= Ìğ7”? Ìğ9”Ì@ Ìğ:”ÌD Ìğ>”ÌF ÌğÌ@”ÌJ ÌğÌD”ÌL ÌğÌF”ÌN ÌğÌH”ÌO ÌğÌI’”	 Ìñ”
+ Ìñ”” Ìò” Ìò
+” Ìò” Ìò3Ü ” Ìó” Ìó” Ìó” Ìó” Ìó” Ìó” Ìó” Ìó” Ìó” Ìó”" Ìó”$ Ìó”( Ìó"”* Ìó$”+ Ìó%”, Ìó&”. Ìó(”/ Ìó)”3 Ìó-”5 Ìó/”9 Ìó3”; Ìó5”< Ìó6”= Ìó7Ü ” Ìô” Ìô” Ìô” Ìô” Ìô” Ìô” Ìô” Ìô” Ìô” Ìô”" Ìô”$ Ìô”( Ìô"”* Ìô$”, Ìô&”- Ìô'’”	 Ìõ”
+ ÌõÜ ” Ìö” Ìö	” Ìö” Ìö” Ìö” Ìö” Ìö” Ìö” Ìö”' Ìö#”( Ìö$”. Ìö*”0 Ìö,”1 Ìö-”3 Ìö/”5 Ìö1™” Ì÷” Ì÷” Ì÷” Ì÷”! Ì÷”" Ì÷”# Ì÷”$ Ì÷”% Ì÷˜” Ìø” Ìø” Ìø” Ìø” Ìø” Ìø”+ Ìø%”- Ìø'Ü ” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù”$ Ìù”& Ìù”' Ìù”( Ìù ”) Ìù!”* Ìù"”, Ìù$”2 Ìù*”4 Ìù,”= Ìù5”? Ìù7”ÌK ÌùÌC”ÌM ÌùÌE”ÌN ÌùÌF”ÌO ÌùÌG”ÌP ÌùÌH”ÌQ ÌùÌI”ÌS ÌùÌK”Ì\ ÌùÌT”Ì^ ÌùÌV”Ìd ÌùÌ\“” Ìú'” Ìú(” Ìú(‘”	 ÌûÜ ” Ìü” Ìü	” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü”& Ìü"”' Ìü#”- Ìü)”/ Ìü+”0 Ìü,”2 Ìü.”4 Ìü0™” Ìı” Ìı” Ìı” Ìı”  Ìı”! Ìı”" Ìı”# Ìı”$ Ìı˜” Ìş” Ìş” Ìş” Ìş” Ìş” Ìş”+ Ìş%”- Ìş'Ü ” Ìÿ” Ìÿ” Ìÿ” Ìÿ” Ìÿ” Ìÿ” Ìÿ” Ìÿ”$ Ìÿ”& Ìÿ”' Ìÿ”( Ìÿ ”) Ìÿ!”* Ìÿ"”, Ìÿ$”2 Ìÿ*”4 Ìÿ,”< Ìÿ4”> Ìÿ6”ÌJ ÌÿÌB”ÌL ÌÿÌD”ÌM ÌÿÌE”ÌN ÌÿÌF”ÌO ÌÿÌG”ÌP ÌÿÌH”ÌR ÌÿÌJ”Ì[ ÌÿÌS”Ì] ÌÿÌU”Ìc ÌÿÌ[“” Í '” Í (” Í (‘”	 Í’” Í” Í˜” Í”
+ Í” Í	” Í” Í” Í” Í”& Í,–” Í” Í” Í
+” Í” Í” Í–” Í” Í” Í
+” Í” Í” ÍÜ ” Í” Í	” Í” Í” Í” Í” Í” Í” Í”$ Í ”% Í!”+ Í'”- Í)”. Í*”0 Í,”2 Í.›” Í” Í” Í” Í” Í”  Í”* Í$”+ Í%”, Í&”- Í'”. Í'” Í	” Í	” Í	” Í	” Í	” Í	” Í	” Í	”  Í	”" Í	”$ Í	”. Í	(”/ Í	)”0 Í	)” Í
+” Í
+” Í
+” Í
+” Í
+” Í
+” Í
+” Í
+”  Í
+”" Í
+”$ Í
+”. Í
+(”/ Í
+)”0 Í
+)‘”	 Í” Í” Í	” Í” Í” Í” Í” Í”! Í”$ Í ”( Í$”* Í&”/ Í+”1 Í-”3 Í/” Í” Í” Í” Í” Í” Í” Í” Í”  Í”* Í$”, Í&”6 Í0”7 Í1”8 Í1Ü ” Í” Í” Í” Í” Í” Í” Í” Í”  Í”! Í”# Í”( Í"”) Í#”* Í$”, Í&”6 Í0”7 Í1”8 Í1‘”	 ÍÜ ” Í” Í
+” Í” Í” Í” Í” Í” Í” Í”  Í”! Í”) Í%”* Í&”, Í(”- Í)”. Í*”6 Í2”7 Í3”8 Í4”: Í6”= Í9”> Í:Ü ” Í” Í” Í” Í” Í” Í” Í” Í%”  Í&”" Í(”# Í)”$ Í*”, Í2”- Í3”. Í4”0 Í6”3 Í9”4 Í:”5 Í;”6 Í;Ü ” Í” Í” Í” Í” Í”6 Í2”8 Í4”Ì@ Í<”ÌA Í=”ÌG ÍÌC”ÌI ÍÌE”ÌP ÍÌL”ÌR ÍÌN”ÌV ÍÌR”ÌW ÍÌS”ÌX ÍÌS”” Í” Í” Í” Í’” Í” Í‘” ÍÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ø‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìğ ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍûÍ*ÌÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍÍ*ÌÔrM”¤type¥start£end¤nameªIdentifierÍÍ«AuthServiceÀÔrN”¤type¥start£end¤body©ClassBodyÍÍ*ÌœÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍDÍxÃÂMªIdentifierÍKÍO¤init¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍOÍxÀÂÂÂ‘MªIdentifierÍPÍS£ctxN®BlockStatementÍUÍx‘ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍ`ÍqÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ`Íp¡=MªIdentifierÍ`ÍjªappContextMªIdentifierÍmÍp£ctxO°MethodDefinitionÍ~ÍÒÃÂMªIdentifierÍ…Í•°getCurrentUserId¦methodP²FunctionExpressionÍ•ÍÒÀÂÂÂN®BlockStatementÍ˜ÍÒ‘ÔrS”¤type¥start£end¨argument¯ReturnStatementÍ£ÍËÔrT–¤type¥start£end¤testªconsequent©alternateµConditionalExpressionÍªÍÊMªIdentifierÍªÍµ«currentUserÔrU—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ¸ÍÆMªIdentifierÍ¸ÍÃ«currentUserMªIdentifierÍÄÍÆ¢idÂÂÔrV•¤type¥start£end¥value£raw§LiteralÍÉÍÊ ¡0O°MethodDefinitionÍØÍ5ÃÂMªIdentifierÍßÍñ²getCurrentUsername¦methodP²FunctionExpressionÍñÍ5ÀÂÂÂN®BlockStatementÍôÍ5‘S¯ReturnStatementÍÿÍ.TµConditionalExpressionÍÍ-MªIdentifierÍÍ«currentUserU°MemberExpressionÍÍ(MªIdentifierÍÍ«currentUserMªIdentifierÍ Í(¨usernameÂÂV§LiteralÍ+Í- ¢''O°MethodDefinitionÍ;Í}ÃÂMªIdentifierÍBÍLªisLoggedIn¦methodP²FunctionExpressionÍLÍ}ÀÂÂÂN®BlockStatementÍOÍ}‘S¯ReturnStatementÍZÍvÔrW–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍaÍuMªIdentifierÍaÍl«currentUser£!==V§LiteralÍqÍuÀ¤nullO°MethodDefinitionÍ˜ÍuÃÂMªIdentifierÍ¥Í±¬restoreLogin¦methodP²FunctionExpressionÍ±ÍuÀÂÂÃN®BlockStatementÍ´Íu“T«IfStatementÍ¿ÍêÔrX–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍÃÍÎ¡!ÃMªIdentifierÍÄÍÎªappContextS¯ReturnStatementÍİÍêV§LiteralÍäÍéÂ¥falseÀÔrY–¤type¥start£end¥block§handler©finalizer¬TryStatementÍôÍWN®BlockStatementÍøÍÚ—ÔrZ•¤type¥start£end¬declarations¤kind³VariableDeclarationÍÍN‘Ôr[•¤type¥start£end¢id¤init²VariableDeclaratorÍÍMMªIdentifierÍÍ¥prefsS¯AwaitExpressionÍÍMÔr\–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÍMU°MemberExpressionÍÍ5MªIdentifierÍÍ&«preferencesMªIdentifierÍ'Í5®getPreferencesÂÂ’MªIdentifierÍ6Í@ªappContextMªIdentifierÍBÍLªPREFS_NAMEÂ¥constZ³VariableDeclarationÍ\Í‘[²VariableDeclaratorÍbÍMªIdentifierÍbÍh¦userIdS¯AwaitExpressionÍkÍ\®CallExpressionÍqÍU°MemberExpressionÍqÍzMªIdentifierÍqÍv¥prefsMªIdentifierÍwÍz£getÂÂ’V§LiteralÍ{ÍŠ­login_user_id¯'login_user_id'V§LiteralÍŒÍ ¡0Â¥constZ³VariableDeclarationÍÍÔ‘[²VariableDeclaratorÍ£ÍÓMªIdentifierÍ£Í«¨usernameS¯AwaitExpressionÍ®ÍÓ\®CallExpressionÍ´ÍÓU°MemberExpressionÍ´Í½MªIdentifierÍ´Í¹¥prefsMªIdentifierÍºÍ½£getÂÂ’V§LiteralÍ¾ÍÎ®login_username°'login_username'V§LiteralÍĞÍÒ ¢''Â¥constZ³VariableDeclarationÍâÍ"‘[²VariableDeclaratorÍèÍ!MªIdentifierÍèÍô¬passwordHashS¯AwaitExpressionÍ÷Í!\®CallExpressionÍıÍ!U°MemberExpressionÍıÍMªIdentifierÍıÍ¥prefsMªIdentifierÍÍ£getÂÂ’V§LiteralÍÍ³login_password_hashµ'login_password_hash'V§LiteralÍÍ  ¢''Â¥constZ³VariableDeclarationÍ0Íj‘[²VariableDeclaratorÍ6ÍiMªIdentifierÍ6Í?©huaweiUidS¯AwaitExpressionÍBÍi\®CallExpressionÍHÍiU°MemberExpressionÍHÍQMªIdentifierÍHÍM¥prefsMªIdentifierÍNÍQ£getÂÂ’V§LiteralÍRÍd°login_huawei_uid²'login_huawei_uid'V§LiteralÍfÍh ¢''Â¥constZ³VariableDeclarationÍxÍ²‘[²VariableDeclaratorÍ~Í±MªIdentifierÍ~Í‡©createdAtS¯AwaitExpressionÍŠÍ±\®CallExpressionÍÍ±U°MemberExpressionÍÍ™MªIdentifierÍÍ•¥prefsMªIdentifierÍ–Í™£getÂÂ’V§LiteralÍšÍ¬°login_created_at²'login_created_at'V§LiteralÍ®Í° ¢''Â¥constT«IfStatementÍÀÍÏW±LogicalExpressionÍÄÍÚW°BinaryExpressionÍÄÍÎMªIdentifierÍÄÍÊ¦userId¡>V§LiteralÍÍÍÎ ¡0¢&&MªIdentifierÍÒÍÚ¨usernameN®BlockStatementÍÜÍÏ“Q³ExpressionStatementÍïÍ?R´AssignmentExpressionÍïÍ>¡=MªIdentifierÍïÍú«currentUser\®CallExpressionÍıÍ>U°MemberExpressionÍıÍMªIdentifierÍıÍ¤UserMªIdentifierÍÍ¦createÂÂ•MªIdentifierÍ	Í¦userIdMªIdentifierÍÍ¨usernameMªIdentifierÍÍ'¬passwordHashMªIdentifierÍ)Í2©createdAtMªIdentifierÍ4Í=©huaweiUidÂQ³ExpressionStatementÍQÍ¢\®CallExpressionÍQÍ¡U°MemberExpressionÍQÍ[MªIdentifierÍQÍV¥hilogMªIdentifierÍWÍ[¤infoÂÂ“V§LiteralÍ\Íb ¦0x0000V§LiteralÍdÍq«AuthService­'AuthService'Ôr]•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍsÍ ’MªIdentifierÍ‰Í‘¨usernameMªIdentifierÍ˜Í¦userId“Ôr^•¤type¥start£end¥value¤tail¯TemplateElementÍtÍ‡Ôr_’£raw¦cooked³restoreLogin: user=³restoreLogin: user=Â^¯TemplateElementÍ’Í–_¤ id=¤ id=Â^¯TemplateElementÍŸÍŸ_  ÃÂS¯ReturnStatementÍ´ÍÀV§LiteralÍ»Í¿Ã¤trueÀÔr`•¤type¥start£end¥param¤body«CatchClauseÍäÍWMªIdentifierÍëÍì¡eN®BlockStatementÍîÍW‘Q³ExpressionStatementÍıÍL\®CallExpressionÍıÍKU°MemberExpressionÍıÍMªIdentifierÍıÍ¥hilogMªIdentifierÍÍ¤warnÂÂ“V§LiteralÍÍ ¦0x0000V§LiteralÍÍ«AuthService­'AuthService']¯TemplateLiteralÍÍJ‘\®CallExpressionÍ7ÍHU°MemberExpressionÍ7ÍEMªIdentifierÍ7Í;¤JSONMªIdentifierÍ<ÍE©stringifyÂÂ‘MªIdentifierÍFÍG¡eÂ’^¯TemplateElementÍ Í5_µrestoreLogin failed: µrestoreLogin failed: Â^¯TemplateElementÍIÍI_  ÃÂÀS¯ReturnStatementÍaÍnV§LiteralÍhÍmÂ¥falseO°MethodDefinitionÍœÍ
+œÃÂMªIdentifierÍ©Í´«persistUser¦methodP²FunctionExpressionÍ´Í
+œÀÂÂÃ‘MªIdentifierÍµÍ¹¤userN®BlockStatementÍ»Í
+œ’T«IfStatementÍÆÍëX¯UnaryExpressionÍÊÍÕ¡!ÃMªIdentifierÍËÍÕªappContextS¯ReturnStatementÍäÍëÀÀY¬TryStatementÍõÍ
+•N®BlockStatementÍùÍ
+˜Z³VariableDeclarationÍÍO‘[²VariableDeclaratorÍÍNMªIdentifierÍÍ¥prefsS¯AwaitExpressionÍÍN\®CallExpressionÍÍNU°MemberExpressionÍÍ6MªIdentifierÍÍ'«preferencesMªIdentifierÍ(Í6®getPreferencesÂÂ’MªIdentifierÍ7ÍAªappContextMªIdentifierÍCÍMªPREFS_NAMEÂ¥constQ³ExpressionStatementÍ]Í‡S¯AwaitExpressionÍ]Í†\®CallExpressionÍcÍ†U°MemberExpressionÍcÍlMªIdentifierÍcÍh¥prefsMªIdentifierÍiÍl£putÂÂ’V§LiteralÍmÍ|­login_user_id¯'login_user_id'U°MemberExpressionÍ~Í…MªIdentifierÍ~Í‚¤userMªIdentifierÍƒÍ…¢idÂÂÂQ³ExpressionStatementÍ•ÍÆS¯AwaitExpressionÍ•ÍÅ\®CallExpressionÍ›ÍÅU°MemberExpressionÍ›Í¤MªIdentifierÍ›Í ¥prefsMªIdentifierÍ¡Í¤£putÂÂ’V§LiteralÍ¥Íµ®login_username°'login_username'U°MemberExpressionÍ·ÍÄMªIdentifierÍ·Í»¤userMªIdentifierÍ¼ÍÄ¨usernameÂÂÂQ³ExpressionStatementÍÔÍ	S¯AwaitExpressionÍÔÍ	\®CallExpressionÍÚÍ	U°MemberExpressionÍÚÍãMªIdentifierÍÚÍß¥prefsMªIdentifierÍàÍã£putÂÂ’V§LiteralÍäÍù³login_password_hashµ'login_password_hash'U°MemberExpressionÍûÍ	MªIdentifierÍûÍÿ¤userMªIdentifierÍ	 Í	­password_hashÂÂÂQ³ExpressionStatementÍ	Í	XS¯AwaitExpressionÍ	Í	W\®CallExpressionÍ	#Í	WU°MemberExpressionÍ	#Í	,MªIdentifierÍ	#Í	(¥prefsMªIdentifierÍ	)Í	,£putÂÂ’V§LiteralÍ	-Í	?°login_huawei_uid²'login_huawei_uid'W±LogicalExpressionÍ	AÍ	VU°MemberExpressionÍ	AÍ	PMªIdentifierÍ	AÍ	E¤userMªIdentifierÍ	FÍ	Pªhuawei_uidÂÂ¢||V§LiteralÍ	TÍ	V ¢''ÂQ³ExpressionStatementÍ	fÍ	›S¯AwaitExpressionÍ	fÍ	š\®CallExpressionÍ	lÍ	šU°MemberExpressionÍ	lÍ	uMªIdentifierÍ	lÍ	q¥prefsMªIdentifierÍ	rÍ	u£putÂÂ’V§LiteralÍ	vÍ	ˆ°login_created_at²'login_created_at'U°MemberExpressionÍ	ŠÍ	™MªIdentifierÍ	ŠÍ	¤userMªIdentifierÍ	Í	™ªcreated_atÂÂÂQ³ExpressionStatementÍ	©Í	½S¯AwaitExpressionÍ	©Í	¼\®CallExpressionÍ	¯Í	¼U°MemberExpressionÍ	¯Í	ºMªIdentifierÍ	¯Í	´¥prefsMªIdentifierÍ	µÍ	º¥flushÂÂÂQ³ExpressionStatementÍ	ËÍ
+\®CallExpressionÍ	ËÍ
+U°MemberExpressionÍ	ËÍ	ÕMªIdentifierÍ	ËÍ	Ğ¥hilogMªIdentifierÍ	ÑÍ	Õ¤infoÂÂ“V§LiteralÍ	ÖÍ	Ü ¦0x0000V§LiteralÍ	ŞÍ	ë«AuthService­'AuthService']¯TemplateLiteralÍ	íÍ
+‘U°MemberExpressionÍ	ıÍ
+
+MªIdentifierÍ	ıÍ
+¤userMªIdentifierÍ
+Í
+
+¨usernameÂÂ’^¯TemplateElementÍ	îÍ	û_­persistUser: ­persistUser: Â^¯TemplateElementÍ
+Í
+_  ÃÂ`«CatchClauseÍ
+#Í
+•MªIdentifierÍ
+*Í
++¡eN®BlockStatementÍ
+-Í
+•‘Q³ExpressionStatementÍ
+<Í
+Š\®CallExpressionÍ
+<Í
+‰U°MemberExpressionÍ
+<Í
+FMªIdentifierÍ
+<Í
+A¥hilogMªIdentifierÍ
+BÍ
+F¤warnÂÂ“V§LiteralÍ
+GÍ
+M ¦0x0000V§LiteralÍ
+OÍ
+\«AuthService­'AuthService']¯TemplateLiteralÍ
+^Í
+ˆ‘\®CallExpressionÍ
+uÍ
+†U°MemberExpressionÍ
+uÍ
+ƒMªIdentifierÍ
+uÍ
+y¤JSONMªIdentifierÍ
+zÍ
+ƒ©stringifyÂÂ‘MªIdentifierÍ
+„Í
+…¡eÂ’^¯TemplateElementÍ
+_Í
+s_´persistUser failed: ´persistUser failed: Â^¯TemplateElementÍ
+‡Í
+‡_  ÃÂÀO°MethodDefinitionÍ
+±ÍÿÃÂMªIdentifierÍ
+¾Í
+Æ¨register¦methodP²FunctionExpressionÍ
+ÆÍÿÀÂÂÃ’MªIdentifierÍ
+ÇÍ
+Ï¨usernameMªIdentifierÍ
+ÑÍ
+Ù¨passwordN®BlockStatementÍ
+ÛÍÿÜ Z³VariableDeclarationÍ
+æÍ‘[²VariableDeclaratorÍ
+ìÍMªIdentifierÍ
+ìÍ
+ñ¥storeS¯AwaitExpressionÍ
+ôÍ\®CallExpressionÍ
+úÍMªIdentifierÍ
+úÍ¨getStoreÂ¥constZ³VariableDeclarationÍÍl‘[²VariableDeclaratorÍÍkMªIdentifierÍÍ¨existingS¯AwaitExpressionÍ Ík\®CallExpressionÍ&ÍkU°MemberExpressionÍ&Í4MªIdentifierÍ&Í+¥storeMªIdentifierÍ,Í4¨querySqlÂÂ’V§LiteralÍ5Í^Ù'SELECT id FROM users WHERE username = ?Ù)'SELECT id FROM users WHERE username = ?'Ôra”¤type¥start£end¨elements¯ArrayExpressionÍ`Íj‘MªIdentifierÍaÍi¨usernameÂ¥constT«IfStatementÍvÍæ\®CallExpressionÍzÍ‘U°MemberExpressionÍzÍMªIdentifierÍzÍ‚¨existingMªIdentifierÍƒÍ¬goToFirstRowÂÂÂN®BlockStatementÍ“Íæ’Q³ExpressionStatementÍ¢Í³\®CallExpressionÍ¢Í²U°MemberExpressionÍ¢Í°MªIdentifierÍ¢Íª¨existingMªIdentifierÍ«Í°¥closeÂÂÂS®ThrowStatementÍÁÍÛÔrb•¤type¥start£end¦callee©arguments­NewExpressionÍÇÍÚMªIdentifierÍËÍĞ¥Error‘V§LiteralÍÑÍÙ²ç”¨æˆ·åå·²å­˜åœ¨´'ç”¨æˆ·åå·²å­˜åœ¨'ÀQ³ExpressionStatementÍğÍ\®CallExpressionÍğÍ U°MemberExpressionÍğÍşMªIdentifierÍğÍø¨existingMªIdentifierÍùÍş¥closeÂÂÂZ³VariableDeclarationÍÍA‘[²VariableDeclaratorÍÍ@MªIdentifierÍÍ¤hashS¯AwaitExpressionÍÍ@\®CallExpressionÍÍ@U°MemberExpressionÍÍ6MªIdentifierÍÍ)«AuthServiceMªIdentifierÍ*Í6¬hashPasswordÂÂ‘MªIdentifierÍ7Í?¨passwordÂ¥constZ³VariableDeclarationÍKÍb‘[²VariableDeclaratorÍQÍaMªIdentifierÍQÍT£now\®CallExpressionÍWÍaMªIdentifierÍWÍ_¨localISOÂ¥constZ³VariableDeclarationÍlÍê‘[²VariableDeclaratorÍrÍéMªIdentifierÍrÍt¢vbÔrc”¤type¥start£endªproperties°ObjectExpressionÍwÍé“Ôrd™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ†ÍšÂÂÂV§LiteralÍ†Í¨usernameª'username'MªIdentifierÍ’Íš¨username¤initd¨PropertyÍ©Í¾ÂÂÂV§LiteralÍ©Í¸­password_hash¯'password_hash'MªIdentifierÍºÍ¾¤hash¤initd¨PropertyÍÍÍŞÂÂÂV§LiteralÍÍÍÙªcreated_at¬'created_at'MªIdentifierÍÛÍŞ£now¤init¥constQ³ExpressionStatementÍôÍ=\®CallExpressionÍôÍ<U°MemberExpressionÍôÍşMªIdentifierÍôÍù¥hilogMªIdentifierÍúÍş¤infoÂÂ“V§LiteralÍÿÍ ¦0x0000V§LiteralÍÍªQuickTrade¬'QuickTrade']¯TemplateLiteralÍÍ;‘MªIdentifierÍ1Í9¨username’^¯TemplateElementÍÍ/_¹register: inserting user ¹register: inserting user Â^¯TemplateElementÍ:Í:_  ÃÂZ³VariableDeclarationÍGÍr‘[²VariableDeclaratorÍMÍqMªIdentifierÍMÍO¢idS¯AwaitExpressionÍRÍq\®CallExpressionÍXÍqU°MemberExpressionÍXÍdMªIdentifierÍXÍ]¥storeMªIdentifierÍ^Íd¦insertÂÂ’V§LiteralÍeÍl¥users§'users'MªIdentifierÍnÍp¢vbÂ¥constQ³ExpressionStatementÍ|ÍÂ\®CallExpressionÍ|ÍÁU°MemberExpressionÍ|Í†MªIdentifierÍ|Í¥hilogMªIdentifierÍ‚Í†¤infoÂÂ“V§LiteralÍ‡Í ¦0x0000V§LiteralÍÍ›ªQuickTrade¬'QuickTrade']¯TemplateLiteralÍÍÀ‘MªIdentifierÍ¼Í¾¢id’^¯TemplateElementÍÍº_¼register: user inserted, id=¼register: user inserted, id=Â^¯TemplateElementÍ¿Í¿_  ÃÂQ³ExpressionStatementÍÌÍS¯AwaitExpressionÍÌÍ \®CallExpressionÍÒÍ U°MemberExpressionÍÒÍõMªIdentifierÍÒÍİ«AuthServiceMªIdentifierÍŞÍõ·createDefaultCategoriesÂÂ’MªIdentifierÍöÍû¥storeMªIdentifierÍıÍÿ¢idÂQ³ExpressionStatementÍÍ[\®CallExpressionÍÍZU°MemberExpressionÍÍMªIdentifierÍÍ¥hilogMªIdentifierÍÍ¤infoÂÂ“V§LiteralÍÍ ¦0x0000V§LiteralÍÍ*ªQuickTrade¬'QuickTrade']¯TemplateLiteralÍ,ÍY‘MªIdentifierÍUÍW¢id’^¯TemplateElementÍ-ÍS_Ù&register: categories created for user Ù&register: categories created for user Â^¯TemplateElementÍXÍX_  ÃÂZ³VariableDeclarationÍeÍ—‘[²VariableDeclaratorÍkÍ–MªIdentifierÍkÍo¤user\®CallExpressionÍrÍ–U°MemberExpressionÍrÍ}MªIdentifierÍrÍv¤UserMªIdentifierÍwÍ}¦createÂÂ”MªIdentifierÍ~Í€¢idMªIdentifierÍ‚ÍŠ¨usernameMªIdentifierÍŒÍ¤hashMªIdentifierÍ’Í•£nowÂ¥constQ³ExpressionStatementÍ¡Í´R´AssignmentExpressionÍ¡Í³¡=MªIdentifierÍ¡Í¬«currentUserMªIdentifierÍ¯Í³¤userQ³ExpressionStatementÍ¾ÍâS¯AwaitExpressionÍ¾Íá\®CallExpressionÍÄÍáU°MemberExpressionÍÄÍÛMªIdentifierÍÄÍÏ«AuthServiceMªIdentifierÍĞÍÛ«persistUserÂÂ‘MªIdentifierÍÜÍà¤userÂS¯ReturnStatementÍìÍøMªIdentifierÍóÍ÷¤userO°MethodDefinitionÍÍBÃÂMªIdentifierÍ#Í(¥login¦methodP²FunctionExpressionÍ(ÍBÀÂÂÃ’MªIdentifierÍ)Í1¨usernameMªIdentifierÍ3Í;¨passwordN®BlockStatementÍ=ÍBZ³VariableDeclarationÍHÍg‘[²VariableDeclaratorÍNÍfMªIdentifierÍNÍS¥storeS¯AwaitExpressionÍVÍf\®CallExpressionÍ\ÍfMªIdentifierÍ\Íd¨getStoreÂ¥constZ³VariableDeclarationÍqÍ ‘[²VariableDeclaratorÍwÍÿMªIdentifierÍwÍ€©resultSetS¯AwaitExpressionÍƒÍÿ\®CallExpressionÍ‰ÍÿU°MemberExpressionÍ‰Í—MªIdentifierÍ‰Í¥storeMªIdentifierÍÍ—¨querySqlÂÂ’V§LiteralÍ˜ÍòÙXSELECT id, username, password_hash, huawei_uid, created_at FROM users WHERE username = ?ÙZ'SELECT id, username, password_hash, huawei_uid, created_at FROM users WHERE username = ?'a¯ArrayExpressionÍôÍş‘MªIdentifierÍõÍı¨usernameÂ¥constT«IfStatementÍ
+ÍX¯UnaryExpressionÍÍ'¡!Ã\®CallExpressionÍÍ'U°MemberExpressionÍÍ%MªIdentifierÍÍ©resultSetMªIdentifierÍÍ%¬goToFirstRowÂÂÂN®BlockStatementÍ)Í’Q³ExpressionStatementÍ8ÍJ\®CallExpressionÍ8ÍIU°MemberExpressionÍ8ÍGMªIdentifierÍ8ÍA©resultSetMªIdentifierÍBÍG¥closeÂÂÂS®ThrowStatementÍXÍtb­NewExpressionÍ^ÍsMªIdentifierÍbÍg¥Error‘V§LiteralÍhÍr¸ç”¨æˆ·åæˆ–å¯†ç é”™è¯¯º'ç”¨æˆ·åæˆ–å¯†ç é”™è¯¯'ÀZ³VariableDeclarationÍ‰ÍÆ‘[²VariableDeclaratorÍÍÅMªIdentifierÍÍ‘¢id\®CallExpressionÍ”ÍÅU°MemberExpressionÍ”Í¥MªIdentifierÍ”Í©resultSetMªIdentifierÍÍ¥§getLongÂÂ‘\®CallExpressionÍ¦ÍÄU°MemberExpressionÍ¦Í¾MªIdentifierÍ¦Í¯©resultSetMªIdentifierÍ°Í¾®getColumnIndexÂÂ‘V§LiteralÍ¿ÍÃ¢id¤'id'ÂÂ¥constZ³VariableDeclarationÍĞÍ"‘[²VariableDeclaratorÍÖÍ!MªIdentifierÍÖÍàªstoredHash\®CallExpressionÍãÍ!U°MemberExpressionÍãÍöMªIdentifierÍãÍì©resultSetMªIdentifierÍíÍö©getStringÂÂ‘\®CallExpressionÍ÷Í U°MemberExpressionÍ÷ÍMªIdentifierÍ÷Í ©resultSetMªIdentifierÍÍ®getColumnIndexÂÂ‘V§LiteralÍÍ­password_hash¯'password_hash'ÂÂ¥constZ³VariableDeclarationÍ,Íz‘[²VariableDeclaratorÍ2ÍyMªIdentifierÍ2Í;©huaweiUid\®CallExpressionÍ>ÍyU°MemberExpressionÍ>ÍQMªIdentifierÍ>ÍG©resultSetMªIdentifierÍHÍQ©getStringÂÂ‘\®CallExpressionÍRÍxU°MemberExpressionÍRÍjMªIdentifierÍRÍ[©resultSetMªIdentifierÍ\Íj®getColumnIndexÂÂ‘V§LiteralÍkÍwªhuawei_uid¬'huawei_uid'ÂÂ¥constZ³VariableDeclarationÍ„ÍÒ‘[²VariableDeclaratorÍŠÍÑMªIdentifierÍŠÍ“©createdAt\®CallExpressionÍ–ÍÑU°MemberExpressionÍ–Í©MªIdentifierÍ–ÍŸ©resultSetMªIdentifierÍ Í©©getStringÂÂ‘\®CallExpressionÍªÍĞU°MemberExpressionÍªÍÂMªIdentifierÍªÍ³©resultSetMªIdentifierÍ´ÍÂ®getColumnIndexÂÂ‘V§LiteralÍÃÍÏªcreated_at¬'created_at'ÂÂ¥constQ³ExpressionStatementÍÜÍî\®CallExpressionÍÜÍíU°MemberExpressionÍÜÍëMªIdentifierÍÜÍå©resultSetMªIdentifierÍæÍë¥closeÂÂÂZ³VariableDeclarationÍøÍ.‘[²VariableDeclaratorÍşÍ-MªIdentifierÍşÍ¤hashS¯AwaitExpressionÍÍ-\®CallExpressionÍÍ-U°MemberExpressionÍÍ#MªIdentifierÍÍ«AuthServiceMªIdentifierÍÍ#¬hashPasswordÂÂ‘MªIdentifierÍ$Í,¨passwordÂ¥constT«IfStatementÍ8Í‡W°BinaryExpressionÍ<ÍOMªIdentifierÍ<Í@¤hash£!==MªIdentifierÍEÍOªstoredHashN®BlockStatementÍQÍ‡‘S®ThrowStatementÍ`Í|b­NewExpressionÍfÍ{MªIdentifierÍjÍo¥Error‘V§LiteralÍpÍz¸ç”¨æˆ·åæˆ–å¯†ç é”™è¯¯º'ç”¨æˆ·åæˆ–å¯†ç é”™è¯¯'ÀZ³VariableDeclarationÍ‘ÍÚ‘[²VariableDeclaratorÍ—ÍÙMªIdentifierÍ—Í›¤user\®CallExpressionÍÍÙU°MemberExpressionÍÍ©MªIdentifierÍÍ¢¤UserMªIdentifierÍ£Í©¦createÂÂ•MªIdentifierÍªÍ¬¢idMªIdentifierÍ®Í¶¨usernameMªIdentifierÍ¸ÍÂªstoredHashMªIdentifierÍÄÍÍ©createdAtMªIdentifierÍÏÍØ©huaweiUidÂ¥constQ³ExpressionStatementÍäÍ÷R´AssignmentExpressionÍäÍö¡=MªIdentifierÍäÍï«currentUserMªIdentifierÍòÍö¤userQ³ExpressionStatementÍÍ%S¯AwaitExpressionÍÍ$\®CallExpressionÍÍ$U°MemberExpressionÍÍMªIdentifierÍÍ«AuthServiceMªIdentifierÍÍ«persistUserÂÂ‘MªIdentifierÍÍ#¤userÂS¯ReturnStatementÍ/Í;MªIdentifierÍ6Í:¤userO°MethodDefinitionÍ]ÍeÃÂMªIdentifierÍjÍu«huaweiLogin¦methodP²FunctionExpressionÍuÍeÀÂÂÃN®BlockStatementÍxÍe‘Y¬TryStatementÍƒÍ^N®BlockStatementÍ‡ÍwÜ Z³VariableDeclarationÍ–ÍÎ‘[²VariableDeclaratorÍœÍÍMªIdentifierÍœÍ¦ªaccountMgr\®CallExpressionÍ©ÍÍU°MemberExpressionÍ©ÍËMªIdentifierÍ©Í³ªappAccountMªIdentifierÍ´ÍË·createAppAccountManagerÂÂÂ¥constZ³VariableDeclarationÍÜÍî‘[²VariableDeclaratorÍàÍíMªIdentifierÍàÍè¨accountsa¯ArrayExpressionÍëÍí£letY¬TryStatementÍüÍ]N®BlockStatementÍ Í›‘Q³ExpressionStatementÍLÍŒR´AssignmentExpressionÍLÍ‹¡=MªIdentifierÍLÍT¨accountsS¯AwaitExpressionÍWÍ‹\®CallExpressionÍ]Í‹U°MemberExpressionÍ]ÍvMªIdentifierÍ]ÍgªaccountMgrMªIdentifierÍhÍv®getAllAccountsÂÂ‘MªIdentifierÍwÍŠ³HUAWEI_ACCOUNT_TYPEÂ`«CatchClauseÍ©Í]MªIdentifierÍ°Í±¡eN®BlockStatementÍ³Í]’Q³ExpressionStatementÍÆÍ\®CallExpressionÍÆÍU°MemberExpressionÍÆÍÑMªIdentifierÍÆÍË¥hilogMªIdentifierÍÌÍÑ¥errorÂÂ“V§LiteralÍÒÍØ ¦0x0000V§LiteralÍÚÍç«AuthService­'AuthService']¯TemplateLiteralÍéÍ‘\®CallExpressionÍÍU°MemberExpressionÍÍMªIdentifierÍÍ¤JSONMªIdentifierÍÍ©stringifyÂÂ‘MªIdentifierÍÍ¡eÂ’^¯TemplateElementÍêÍ_·getAllAccounts failed: ·getAllAccounts failed: Â^¯TemplateElementÍÍ_  ÃÂS®ThrowStatementÍ*ÍNb­NewExpressionÍ0ÍMMªIdentifierÍ4Í9¥Error‘V§LiteralÍ:ÍLÙ0è·å–åä¸ºå¸å·å¤±è´¥ï¼Œè¯·ä½¿ç”¨å¯†ç ç™»å½•Ù2'è·å–åä¸ºå¸å·å¤±è´¥ï¼Œè¯·ä½¿ç”¨å¯†ç ç™»å½•'ÀT«IfStatementÍkÍÙW°BinaryExpressionÍoÍ„U°MemberExpressionÍoÍ~MªIdentifierÍoÍw¨accountsMªIdentifierÍxÍ~¦lengthÂÂ£===V§LiteralÍƒÍ„ ¡0N®BlockStatementÍ†ÍÙ‘S®ThrowStatementÍ™ÍÊb­NewExpressionÍŸÍÉMªIdentifierÍ£Í¨¥Error‘V§LiteralÍ©ÍÈÙWæœªæ‰¾åˆ°åä¸ºå¸å·ï¼Œè¯·å…ˆåœ¨ç³»ç»Ÿè®¾ç½®ä¸­ç™»å½•åä¸ºå¸å·æˆ–ä½¿ç”¨å¯†ç ç™»å½•ÙY'æœªæ‰¾åˆ°åä¸ºå¸å·ï¼Œè¯·å…ˆåœ¨ç³»ç»Ÿè®¾ç½®ä¸­ç™»å½•åä¸ºå¸å·æˆ–ä½¿ç”¨å¯†ç ç™»å½•'ÀZ³VariableDeclarationÍçÍ‘[²VariableDeclaratorÍíÍMªIdentifierÍíÍø«accountNameU°MemberExpressionÍûÍU°MemberExpressionÍûÍMªIdentifierÍûÍ¨accountsV§LiteralÍÍ ¡0ÃÂMªIdentifierÍÍ¤nameÂÂ¥constZ³VariableDeclarationÍÍ-‘[²VariableDeclaratorÍÍ,MªIdentifierÍÍ'©huaweiUidV§LiteralÍ*Í, ¢''£letY¬TryStatementÍ;ÍÆN®BlockStatementÍ?Íò’Z³VariableDeclarationÍRÍº‘[²VariableDeclaratorÍXÍ¹MªIdentifierÍXÍbªtokenValueS¯AwaitExpressionÍeÍ¹\®CallExpressionÍkÍ¹U°MemberExpressionÍkÍƒMªIdentifierÍkÍuªaccountMgrMªIdentifierÍvÍƒ­getOAuthTokenÂÂ“MªIdentifierÍ„Í«accountNameMªIdentifierÍ‘Í¤³HUAWEI_ACCOUNT_TYPEMªIdentifierÍ¦Í¸²HUAWEI_OAUTH_SCOPEÂ¥constQ³ExpressionStatementÍÌÍãR´AssignmentExpressionÍÌÍâ¡=MªIdentifierÍÌÍÕ©huaweiUidMªIdentifierÍØÍâªtokenValue`«CatchClauseÍ ÍÆMªIdentifierÍÍ¡eN®BlockStatementÍ
+ÍÆ’Q³ExpressionStatementÍÍn\®CallExpressionÍÍmU°MemberExpressionÍÍ(MªIdentifierÍÍ"¥hilogMªIdentifierÍ#Í(¥errorÂÂ“V§LiteralÍ)Í/ ¦0x0000V§LiteralÍ1Í>«AuthService­'AuthService']¯TemplateLiteralÍ@Íl‘\®CallExpressionÍYÍjU°MemberExpressionÍYÍgMªIdentifierÍYÍ]¤JSONMªIdentifierÍ^Íg©stringifyÂÂ‘MªIdentifierÍhÍi¡eÂ’^¯TemplateElementÍAÍW_¶getOAuthToken failed: ¶getOAuthToken failed: Â^¯TemplateElementÍkÍk_  ÃÂS®ThrowStatementÍ€Í·b­NewExpressionÍ†Í¶MªIdentifierÍŠÍ¥Error‘V§LiteralÍÍµÙMåä¸ºå¸å·æˆæƒå¤±è´¥ï¼Œè¯·åœ¨AGCä¸­é…ç½®Account Kitæˆ–ä½¿ç”¨å¯†ç ç™»å½•ÙO'åä¸ºå¸å·æˆæƒå¤±è´¥ï¼Œè¯·åœ¨AGCä¸­é…ç½®Account Kitæˆ–ä½¿ç”¨å¯†ç ç™»å½•'ÀT«IfStatementÍÔÍ$X¯UnaryExpressionÍØÍâ¡!ÃMªIdentifierÍÙÍâ©huaweiUidN®BlockStatementÍäÍ$‘S®ThrowStatementÍ÷Íb­NewExpressionÍıÍMªIdentifierÍÍ¥Error‘V§LiteralÍÍ¾è·å–åä¸ºå¸å·ä¿¡æ¯å¤±è´¥Ù 'è·å–åä¸ºå¸å·ä¿¡æ¯å¤±è´¥'ÀQ³ExpressionStatementÍ2Íx\®CallExpressionÍ2ÍwU°MemberExpressionÍ2Í<MªIdentifierÍ2Í7¥hilogMªIdentifierÍ8Í<¤infoÂÂ“V§LiteralÍ=ÍC ¦0x0000V§LiteralÍEÍR«AuthService­'AuthService']¯TemplateLiteralÍTÍv‘MªIdentifierÍkÍt©huaweiUid’^¯TemplateElementÍUÍi_´Huawei account uid: ´Huawei account uid: Â^¯TemplateElementÍuÍu_  ÃÂZ³VariableDeclarationÍ†Í¥‘[²VariableDeclaratorÍŒÍ¤MªIdentifierÍŒÍ‘¥storeS¯AwaitExpressionÍ”Í¤\®CallExpressionÍšÍ¤MªIdentifierÍšÍ¢¨getStoreÂ¥constZ³VariableDeclarationÍ³ÍE‘[²VariableDeclaratorÍ¹ÍDMªIdentifierÍ¹ÍÂ©resultSetS¯AwaitExpressionÍÅÍD\®CallExpressionÍËÍDU°MemberExpressionÍËÍÙMªIdentifierÍËÍĞ¥storeMªIdentifierÍÑÍÙ¨querySqlÂÂ’V§LiteralÍÚÍ6ÙZSELECT id, username, password_hash, huawei_uid, created_at FROM users WHERE huawei_uid = ?Ù\'SELECT id, username, password_hash, huawei_uid, created_at FROM users WHERE huawei_uid = ?'a¯ArrayExpressionÍ8ÍC‘MªIdentifierÍ9ÍB©huaweiUidÂ¥constT«IfStatementÍSÍé\®CallExpressionÍWÍoU°MemberExpressionÍWÍmMªIdentifierÍWÍ`©resultSetMªIdentifierÍaÍm¬goToFirstRowÂÂÂN®BlockStatementÍqÍé™Z³VariableDeclarationÍ„ÍÁ‘[²VariableDeclaratorÍŠÍÀMªIdentifierÍŠÍŒ¢id\®CallExpressionÍÍÀU°MemberExpressionÍÍ MªIdentifierÍÍ˜©resultSetMªIdentifierÍ™Í §getLongÂÂ‘\®CallExpressionÍ¡Í¿U°MemberExpressionÍ¡Í¹MªIdentifierÍ¡Íª©resultSetMªIdentifierÍ«Í¹®getColumnIndexÂÂ‘V§LiteralÍºÍ¾¢id¤'id'ÂÂ¥constZ³VariableDeclarationÍÓÍ‘[²VariableDeclaratorÍÙÍMªIdentifierÍÙÍá¨username\®CallExpressionÍäÍU°MemberExpressionÍäÍ÷MªIdentifierÍäÍí©resultSetMªIdentifierÍîÍ÷©getStringÂÂ‘\®CallExpressionÍøÍU°MemberExpressionÍøÍMªIdentifierÍøÍ©resultSetMªIdentifierÍÍ®getColumnIndexÂÂ‘V§LiteralÍÍ¨usernameª'username'ÂÂ¥constZ³VariableDeclarationÍ0Í‚‘[²VariableDeclaratorÍ6ÍMªIdentifierÍ6Í@ªstoredHash\®CallExpressionÍCÍU°MemberExpressionÍCÍVMªIdentifierÍCÍL©resultSetMªIdentifierÍMÍV©getStringÂÂ‘\®CallExpressionÍWÍ€U°MemberExpressionÍWÍoMªIdentifierÍWÍ`©resultSetMªIdentifierÍaÍo®getColumnIndexÂÂ‘V§LiteralÍpÍ­password_hash¯'password_hash'ÂÂ¥constZ³VariableDeclarationÍ”Íâ‘[²VariableDeclaratorÍšÍáMªIdentifierÍšÍ£©createdAt\®CallExpressionÍ¦ÍáU°MemberExpressionÍ¦Í¹MªIdentifierÍ¦Í¯©resultSetMªIdentifierÍ°Í¹©getStringÂÂ‘\®CallExpressionÍºÍàU°MemberExpressionÍºÍÒMªIdentifierÍºÍÃ©resultSetMªIdentifierÍÄÍÒ®getColumnIndexÂÂ‘V§LiteralÍÓÍßªcreated_at¬'created_at'ÂÂ¥constQ³ExpressionStatementÍôÍ\®CallExpressionÍôÍU°MemberExpressionÍôÍMªIdentifierÍôÍı©resultSetMªIdentifierÍşÍ¥closeÂÂÂZ³VariableDeclarationÍÍa‘[²VariableDeclaratorÍÍ`MªIdentifierÍÍ"¤user\®CallExpressionÍ%Í`U°MemberExpressionÍ%Í0MªIdentifierÍ%Í)¤UserMªIdentifierÍ*Í0¦createÂÂ•MªIdentifierÍ1Í3¢idMªIdentifierÍ5Í=¨usernameMªIdentifierÍ?ÍIªstoredHashMªIdentifierÍKÍT©createdAtMªIdentifierÍVÍ_©huaweiUidÂ¥constQ³ExpressionStatementÍsÍ†R´AssignmentExpressionÍsÍ…¡=MªIdentifierÍsÍ~«currentUserMªIdentifierÍÍ…¤userQ³ExpressionStatementÍ˜Í¼S¯AwaitExpressionÍ˜Í»\®CallExpressionÍÍ»U°MemberExpressionÍÍµMªIdentifierÍÍ©«AuthServiceMªIdentifierÍªÍµ«persistUserÂÂ‘MªIdentifierÍ¶Íº¤userÂS¯ReturnStatementÍÎÍÚMªIdentifierÍÕÍÙ¤userÀQ³ExpressionStatementÍ÷Í	\®CallExpressionÍ÷ÍU°MemberExpressionÍ÷ÍMªIdentifierÍ÷Í ©resultSetMªIdentifierÍÍ¥closeÂÂÂZ³VariableDeclarationÍ0Í^‘[²VariableDeclaratorÍ6Í]MªIdentifierÍ6ÍA«displayNameU°MemberExpressionÍDÍ]\®CallExpressionÍDÍZU°MemberExpressionÍDÍUMªIdentifierÍDÍO«accountNameMªIdentifierÍPÍU¥splitÂÂ‘V§LiteralÍVÍY¡@£'@'ÂV§LiteralÍ[Í\ ¡0ÃÂ¥constZ³VariableDeclarationÍlÍƒ‘[²VariableDeclaratorÍrÍ‚MªIdentifierÍrÍu£now\®CallExpressionÍxÍ‚MªIdentifierÍxÍ€¨localISOÂ¥constZ³VariableDeclarationÍ‘Íj‘[²VariableDeclaratorÍ—ÍiMªIdentifierÍ—Íœ¥newIdS¯AwaitExpressionÍŸÍi\®CallExpressionÍ¥ÍiU°MemberExpressionÍ¥Í±MªIdentifierÍ¥Íª¥storeMªIdentifierÍ«Í±¦insertÂÂ’V§LiteralÍ²Í¹¥users§'users'c°ObjectExpressionÍ»Íh”d¨PropertyÍÎÍåÂÂÂV§LiteralÍÎÍØ¨usernameª'username'MªIdentifierÍÚÍå«displayName¤initd¨PropertyÍøÍÂÂÂV§LiteralÍøÍ­password_hash¯'password_hash'V§LiteralÍ	Í ¢''¤initd¨PropertyÍÍ5ÂÂÂV§LiteralÍÍ*ªhuawei_uid¬'huawei_uid'MªIdentifierÍ,Í5©huaweiUid¤initd¨PropertyÍHÍYÂÂÂV§LiteralÍHÍTªcreated_at¬'created_at'MªIdentifierÍVÍY£now¤initÂ¥constQ³ExpressionStatementÍxÍ°S¯AwaitExpressionÍxÍ¯\®CallExpressionÍ~Í¯U°MemberExpressionÍ~Í¡MªIdentifierÍ~Í‰«AuthServiceMªIdentifierÍŠÍ¡·createDefaultCategoriesÂÂ’MªIdentifierÍ¢Í§¥storeMªIdentifierÍ©Í®¥newIdÂZ³VariableDeclarationÍ¾Íÿ‘[²VariableDeclaratorÍÄÍşMªIdentifierÍÄÍÈ¤user\®CallExpressionÍËÍşU°MemberExpressionÍËÍÖMªIdentifierÍËÍÏ¤UserMªIdentifierÍĞÍÖ¦createÂÂ•MªIdentifierÍ×ÍÜ¥newIdMªIdentifierÍŞÍé«displayNameV§LiteralÍëÍí ¢''MªIdentifierÍïÍò£nowMªIdentifierÍôÍı©huaweiUidÂ¥constQ³ExpressionStatementÍÍ R´AssignmentExpressionÍÍ¡=MªIdentifierÍÍ«currentUserMªIdentifierÍÍ¤userQ³ExpressionStatementÍ.ÍRS¯AwaitExpressionÍ.ÍQ\®CallExpressionÍ4ÍQU°MemberExpressionÍ4ÍKMªIdentifierÍ4Í?«AuthServiceMªIdentifierÍ@ÍK«persistUserÂÂ‘MªIdentifierÍLÍP¤userÂS¯ReturnStatementÍ`ÍlMªIdentifierÍgÍk¤user`«CatchClauseÍÍ^MªIdentifierÍˆÍ‰¡eN®BlockStatementÍ‹Í^“Q³ExpressionStatementÍšÍê\®CallExpressionÍšÍéU°MemberExpressionÍšÍ¥MªIdentifierÍšÍŸ¥hilogMªIdentifierÍ Í¥¥errorÂÂ“V§LiteralÍ¦Í¬ ¦0x0000V§LiteralÍ®Í»«AuthService­'AuthService']¯TemplateLiteralÍ½Íè‘\®CallExpressionÍÕÍæU°MemberExpressionÍÕÍãMªIdentifierÍÕÍÙ¤JSONMªIdentifierÍÚÍã©stringifyÂÂ‘MªIdentifierÍäÍå¡eÂ’^¯TemplateElementÍ¾ÍÓ_µHuawei login failed: µHuawei login failed: Â^¯TemplateElementÍçÍç_  ÃÂZ³VariableDeclarationÍøÍ0‘[²VariableDeclaratorÍşÍ/MªIdentifierÍşÍ£msgTµConditionalExpressionÍÍ/W°BinaryExpressionÍÍMªIdentifierÍÍ¡eªinstanceofMªIdentifierÍÍ¥ErrorU°MemberExpressionÍÍ"MªIdentifierÍÍ¡eMªIdentifierÍÍ"§messageÂÂV§LiteralÍ%Í/¸åä¸ºå¸å·ç™»å½•å¤±è´¥º'åä¸ºå¸å·ç™»å½•å¤±è´¥'¥constS®ThrowStatementÍ>ÍSb­NewExpressionÍDÍRMªIdentifierÍHÍM¥Error‘MªIdentifierÍNÍQ£msgÀO°MethodDefinitionÍkÍ"&ÃÂMªIdentifierÍxÍ~¦logout¦methodP²FunctionExpressionÍ~Í"&ÀÂÂÃN®BlockStatementÍÍ"&’Q³ExpressionStatementÍŒÍŸR´AssignmentExpressionÍŒÍ¡=MªIdentifierÍŒÍ—«currentUserV§LiteralÍšÍÀ¤nullT«IfStatementÍ¿Í"MªIdentifierÍÃÍÍªappContextN®BlockStatementÍÏÍ"‘Y¬TryStatementÍŞÍ"N®BlockStatementÍâÍ!Œ—Z³VariableDeclarationÍõÍ <‘[²VariableDeclaratorÍûÍ ;MªIdentifierÍûÍ  ¥prefsS¯AwaitExpressionÍ Í ;\®CallExpressionÍ 	Í ;U°MemberExpressionÍ 	Í #MªIdentifierÍ 	Í «preferencesMªIdentifierÍ Í #®getPreferencesÂÂ’MªIdentifierÍ $Í .ªappContextMªIdentifierÍ 0Í :ªPREFS_NAMEÂ¥constQ³ExpressionStatementÍ NÍ rS¯AwaitExpressionÍ NÍ q\®CallExpressionÍ TÍ qU°MemberExpressionÍ TÍ `MªIdentifierÍ TÍ Y¥prefsMªIdentifierÍ ZÍ `¦deleteÂÂ‘V§LiteralÍ aÍ p­login_user_id¯'login_user_id'ÂQ³ExpressionStatementÍ „Í ©S¯AwaitExpressionÍ „Í ¨\®CallExpressionÍ ŠÍ ¨U°MemberExpressionÍ ŠÍ –MªIdentifierÍ ŠÍ ¥prefsMªIdentifierÍ Í –¦deleteÂÂ‘V§LiteralÍ —Í §®login_username°'login_username'ÂQ³ExpressionStatementÍ »Í åS¯AwaitExpressionÍ »Í ä\®CallExpressionÍ ÁÍ äU°MemberExpressionÍ ÁÍ ÍMªIdentifierÍ ÁÍ Æ¥prefsMªIdentifierÍ ÇÍ Í¦deleteÂÂ‘V§LiteralÍ ÎÍ ã³login_password_hashµ'login_password_hash'ÂQ³ExpressionStatementÍ ÷Í!S¯AwaitExpressionÍ ÷Í!\®CallExpressionÍ ıÍ!U°MemberExpressionÍ ıÍ!	MªIdentifierÍ ıÍ!¥prefsMªIdentifierÍ!Í!	¦deleteÂÂ‘V§LiteralÍ!
+Í!°login_huawei_uid²'login_huawei_uid'ÂQ³ExpressionStatementÍ!0Í!WS¯AwaitExpressionÍ!0Í!V\®CallExpressionÍ!6Í!VU°MemberExpressionÍ!6Í!BMªIdentifierÍ!6Í!;¥prefsMªIdentifierÍ!<Í!B¦deleteÂÂ‘V§LiteralÍ!CÍ!U°login_created_at²'login_created_at'ÂQ³ExpressionStatementÍ!iÍ!}S¯AwaitExpressionÍ!iÍ!|\®CallExpressionÍ!oÍ!|U°MemberExpressionÍ!oÍ!zMªIdentifierÍ!oÍ!t¥prefsMªIdentifierÍ!uÍ!z¥flushÂÂÂ`«CatchClauseÍ!šÍ"MªIdentifierÍ!¡Í!¢¡eN®BlockStatementÍ!¤Í"‘Q³ExpressionStatementÍ!·Í"\®CallExpressionÍ!·Í"U°MemberExpressionÍ!·Í!ÁMªIdentifierÍ!·Í!¼¥hilogMªIdentifierÍ!½Í!Á¤warnÂÂ“V§LiteralÍ!ÂÍ!È ¦0x0000V§LiteralÍ!ÊÍ!×«AuthService­'AuthService']¯TemplateLiteralÍ!ÙÍ"‘\®CallExpressionÍ!ğÍ"U°MemberExpressionÍ!ğÍ!şMªIdentifierÍ!ğÍ!ô¤JSONMªIdentifierÍ!õÍ!ş©stringifyÂÂ‘MªIdentifierÍ!ÿÍ" ¡eÂ’^¯TemplateElementÍ!ÚÍ!î_´clear prefs failed: ´clear prefs failed: Â^¯TemplateElementÍ"Í"_  ÃÂÀÀO°MethodDefinitionÍ",Í'èÃÂMªIdentifierÍ"9Í"P·createDefaultCategories¦methodP²FunctionExpressionÍ"PÍ'èÀÂÂÃ’MªIdentifierÍ"QÍ"V¥storeMªIdentifierÍ"XÍ"^¦userIdN®BlockStatementÍ"`Í'è™Z³VariableDeclarationÍ"˜Í#‘[²VariableDeclaratorÍ"Í# MªIdentifierÍ"Í"£¥checkS¯AwaitExpressionÍ"¦Í# \®CallExpressionÍ"¬Í# U°MemberExpressionÍ"¬Í"ºMªIdentifierÍ"¬Í"±¥storeMªIdentifierÍ"²Í"º¨querySqlÂÂ’V§LiteralÍ"»Í"õÙ8SELECT COUNT(*) as cnt FROM categories WHERE user_id = ?Ù:'SELECT COUNT(*) as cnt FROM categories WHERE user_id = ?'a¯ArrayExpressionÍ"÷Í"ÿ‘MªIdentifierÍ"øÍ"ş¦userIdÂ¥constQ³ExpressionStatementÍ#Í# \®CallExpressionÍ#Í#U°MemberExpressionÍ#Í#MªIdentifierÍ#Í#¥checkMªIdentifierÍ#Í#¬goToFirstRowÂÂÂZ³VariableDeclarationÍ#*Í#a‘[²VariableDeclaratorÍ#0Í#`MªIdentifierÍ#0Í#3£cnt\®CallExpressionÍ#6Í#`U°MemberExpressionÍ#6Í#CMªIdentifierÍ#6Í#;¥checkMªIdentifierÍ#<Í#C§getLongÂÂ‘\®CallExpressionÍ#DÍ#_U°MemberExpressionÍ#DÍ#XMªIdentifierÍ#DÍ#I¥checkMªIdentifierÍ#JÍ#X®getColumnIndexÂÂ‘V§LiteralÍ#YÍ#^£cnt¥'cnt'ÂÂ¥constQ³ExpressionStatementÍ#kÍ#y\®CallExpressionÍ#kÍ#xU°MemberExpressionÍ#kÍ#vMªIdentifierÍ#kÍ#p¥checkMªIdentifierÍ#qÍ#v¥closeÂÂÂT«IfStatementÍ#ƒÍ$+W°BinaryExpressionÍ#‡Í#MªIdentifierÍ#‡Í#Š£cnt¡>V§LiteralÍ#Í# ¡0N®BlockStatementÍ#Í$+’Q³ExpressionStatementÍ#ŸÍ$\®CallExpressionÍ#ŸÍ$
+U°MemberExpressionÍ#ŸÍ#«MªIdentifierÍ#ŸÍ#¦§consoleMªIdentifierÍ#§Í#«¤infoÂÂ•V§LiteralÍ#¬Í#ÖÙ(QuickTrade createDefaultCategories: userÙ*'QuickTrade createDefaultCategories: user'MªIdentifierÍ#ØÍ#Ş¦userIdV§LiteralÍ#àÍ#í«already has­'already has'MªIdentifierÍ#ïÍ#ò£cntV§LiteralÍ#ôÍ$	³categories, skippedµ'categories, skipped'ÂS¯ReturnStatementÍ$Í$ ÀÀZ³VariableDeclarationÍ$5Í%)‘[²VariableDeclaratorÍ$;Í%(MªIdentifierÍ$;Í$F«expenseCatsa¯ArrayExpressionÍ$IÍ%(ša¯ArrayExpressionÍ$XÍ$g“V§LiteralÍ$YÍ$]¦é¤é¥®¨'é¤é¥®'V§LiteralÍ$_Í$c¤ğŸœ¦'ğŸœ'V§LiteralÍ$eÍ$f¡1a¯ArrayExpressionÍ$iÍ$x“V§LiteralÍ$jÍ$n¦äº¤é€š¨'äº¤é€š'V§LiteralÍ$pÍ$t¤ğŸš—¦'ğŸš—'V§LiteralÍ$vÍ$w¡2a¯ArrayExpressionÍ$zÍ$Š“V§LiteralÍ${Í$¦è´­ç‰©¨'è´­ç‰©'V§LiteralÍ$Í$†§ğŸ›ï¸©'ğŸ›ï¸'V§LiteralÍ$ˆÍ$‰¡3a¯ArrayExpressionÍ$™Í$©“V§LiteralÍ$šÍ$Ÿ©æ—¥ç”¨å“«'æ—¥ç”¨å“'V§LiteralÍ$¡Í$¥¤ğŸ§´¦'ğŸ§´'V§LiteralÍ$§Í$¨¡4a¯ArrayExpressionÍ$«Í$º“V§LiteralÍ$¬Í$°¦å¨±ä¹¨'å¨±ä¹'V§LiteralÍ$²Í$¶¤ğŸ®¦'ğŸ®'V§LiteralÍ$¸Í$¹¡5a¯ArrayExpressionÍ$¼Í$Ë“V§LiteralÍ$½Í$Á¦é€šè®¯¨'é€šè®¯'V§LiteralÍ$ÃÍ$Ç¤ğŸ“±¦'ğŸ“±'V§LiteralÍ$ÉÍ$Ê¡6a¯ArrayExpressionÍ$ÚÍ$é“V§LiteralÍ$ÛÍ$ß¦å±…ä½¨'å±…ä½'V§LiteralÍ$áÍ$å¤ğŸ ¦'ğŸ 'V§LiteralÍ$çÍ$è¡7a¯ArrayExpressionÍ$ëÍ$ú“V§LiteralÍ$ìÍ$ğ¦åŒ»ç–—¨'åŒ»ç–—'V§LiteralÍ$òÍ$ö¤ğŸ’Š¦'ğŸ’Š'V§LiteralÍ$øÍ$ù¡8a¯ArrayExpressionÍ$üÍ%“V§LiteralÍ$ıÍ%¦æ•™è‚²¨'æ•™è‚²'V§LiteralÍ%Í%¤ğŸ“š¦'ğŸ“š'V§LiteralÍ%	Í%
+	¡9a¯ArrayExpressionÍ%Í%“V§LiteralÍ%Í%¦å…¶ä»–¨'å…¶ä»–'V§LiteralÍ%Í%¤ğŸ“Œ¦'ğŸ“Œ'V§LiteralÍ%Í%Ìc¢99¥constZ³VariableDeclarationÍ%3Í%Â‘[²VariableDeclaratorÍ%9Í%ÁMªIdentifierÍ%9Í%CªincomeCatsa¯ArrayExpressionÍ%FÍ%Á•a¯ArrayExpressionÍ%UÍ%d“V§LiteralÍ%VÍ%Z¦å·¥èµ„¨'å·¥èµ„'V§LiteralÍ%\Í%`¤ğŸ’µ¦'ğŸ’µ'V§LiteralÍ%bÍ%c¡1a¯ArrayExpressionÍ%fÍ%u“V§LiteralÍ%gÍ%k¦æŠ•èµ„¨'æŠ•èµ„'V§LiteralÍ%mÍ%q¤ğŸ“ˆ¦'ğŸ“ˆ'V§LiteralÍ%sÍ%t¡2a¯ArrayExpressionÍ%wÍ%†“V§LiteralÍ%xÍ%|¦å…¼èŒ¨'å…¼èŒ'V§LiteralÍ%~Í%‚¤ğŸ’¼¦'ğŸ’¼'V§LiteralÍ%„Í%…¡3a¯ArrayExpressionÍ%•Í%¤“V§LiteralÍ%–Í%š¦é€€æ¬¾¨'é€€æ¬¾'V§LiteralÍ%œÍ% ¦â†©ï¸¨'â†©ï¸'V§LiteralÍ%¢Í%£¡4a¯ArrayExpressionÍ%¦Í%¶“V§LiteralÍ%§Í%«¦å…¶ä»–¨'å…¶ä»–'V§LiteralÍ%­Í%±¤ğŸ“Œ¦'ğŸ“Œ'V§LiteralÍ%³Í%µÌc¢99¥constÔre—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ%ÌÍ&ÓZ³VariableDeclarationÍ%ÑÍ%Ú‘[²VariableDeclaratorÍ%ÕÍ%ÚMªIdentifierÍ%ÕÍ%Ö¡iV§LiteralÍ%ÙÍ%Ú ¡0£letW°BinaryExpressionÍ%ÜÍ%òMªIdentifierÍ%ÜÍ%İ¡i¡<U°MemberExpressionÍ%àÍ%òMªIdentifierÍ%àÍ%ë«expenseCatsMªIdentifierÍ%ìÍ%ò¦lengthÂÂX°UpdateExpressionÍ%ôÍ%÷¢++ÂMªIdentifierÍ%ôÍ%õ¡iN®BlockStatementÍ%ùÍ&Ó’Z³VariableDeclarationÍ&Í&!‘[²VariableDeclaratorÍ&Í& MªIdentifierÍ&Í&¡cU°MemberExpressionÍ&Í& MªIdentifierÍ&Í&«expenseCatsMªIdentifierÍ&Í&¡iÃÂ¥constQ³ExpressionStatementÍ&/Í&ÈS¯AwaitExpressionÍ&/Í&Ç\®CallExpressionÍ&5Í&ÇU°MemberExpressionÍ&5Í&AMªIdentifierÍ&5Í&:¥storeMªIdentifierÍ&;Í&A¦insertÂÂ’V§LiteralÍ&BÍ&Nªcategories¬'categories'c°ObjectExpressionÍ&PÍ&Æ•d¨PropertyÍ&cÍ&oÂÂÂV§LiteralÍ&cÍ&i¤name¦'name'U°MemberExpressionÍ&kÍ&oMªIdentifierÍ&kÍ&l¡cV§LiteralÍ&mÍ&n ¡0ÃÂ¤initd¨PropertyÍ&qÍ&}ÂÂÂV§LiteralÍ&qÍ&w¤icon¦'icon'U°MemberExpressionÍ&yÍ&}MªIdentifierÍ&yÍ&z¡cV§LiteralÍ&{Í&|¡1ÃÂ¤initd¨PropertyÍ&Í&ÂÂÂV§LiteralÍ&Í&…¤type¦'type'V§LiteralÍ&‡Í&§expense©'expense'¤initd¨PropertyÍ&’Í&¤ÂÂÂV§LiteralÍ&’Í&ªsort_order¬'sort_order'U°MemberExpressionÍ& Í&¤MªIdentifierÍ& Í&¡¡cV§LiteralÍ&¢Í&£¡2ÃÂ¤initd¨PropertyÍ&¦Í&·ÂÂÂV§LiteralÍ&¦Í&¯§user_id©'user_id'MªIdentifierÍ&±Í&·¦userId¤initÂe¬ForStatementÍ&İÍ'áZ³VariableDeclarationÍ&âÍ&ë‘[²VariableDeclaratorÍ&æÍ&ëMªIdentifierÍ&æÍ&ç¡iV§LiteralÍ&êÍ&ë ¡0£letW°BinaryExpressionÍ&íÍ'MªIdentifierÍ&íÍ&î¡i¡<U°MemberExpressionÍ&ñÍ'MªIdentifierÍ&ñÍ&ûªincomeCatsMªIdentifierÍ&üÍ'¦lengthÂÂX°UpdateExpressionÍ'Í'¢++ÂMªIdentifierÍ'Í'¡iN®BlockStatementÍ'	Í'á’Z³VariableDeclarationÍ'Í'0‘[²VariableDeclaratorÍ'Í'/MªIdentifierÍ'Í'¡cU°MemberExpressionÍ'"Í'/MªIdentifierÍ'"Í',ªincomeCatsMªIdentifierÍ'-Í'.¡iÃÂ¥constQ³ExpressionStatementÍ'>Í'ÖS¯AwaitExpressionÍ'>Í'Õ\®CallExpressionÍ'DÍ'ÕU°MemberExpressionÍ'DÍ'PMªIdentifierÍ'DÍ'I¥storeMªIdentifierÍ'JÍ'P¦insertÂÂ’V§LiteralÍ'QÍ']ªcategories¬'categories'c°ObjectExpressionÍ'_Í'Ô•d¨PropertyÍ'rÍ'~ÂÂÂV§LiteralÍ'rÍ'x¤name¦'name'U°MemberExpressionÍ'zÍ'~MªIdentifierÍ'zÍ'{¡cV§LiteralÍ'|Í'} ¡0ÃÂ¤initd¨PropertyÍ'€Í'ŒÂÂÂV§LiteralÍ'€Í'†¤icon¦'icon'U°MemberExpressionÍ'ˆÍ'ŒMªIdentifierÍ'ˆÍ'‰¡cV§LiteralÍ'ŠÍ'‹¡1ÃÂ¤initd¨PropertyÍ'Í'ÂÂÂV§LiteralÍ'Í'”¤type¦'type'V§LiteralÍ'–Í'¦income¨'income'¤initd¨PropertyÍ' Í'²ÂÂÂV§LiteralÍ' Í'¬ªsort_order¬'sort_order'U°MemberExpressionÍ'®Í'²MªIdentifierÍ'®Í'¯¡cV§LiteralÍ'°Í'±¡2ÃÂ¤initd¨PropertyÍ'´Í'ÅÂÂÂV§LiteralÍ'´Í'½§user_id©'user_id'MªIdentifierÍ'¿Í'Å¦userId¤initÂO°MethodDefinitionÍ'îÍ*ÉÃÂMªIdentifierÍ'ûÍ(¬hashPassword¦methodP²FunctionExpressionÍ(Í*ÉÀÂÂÃ‘MªIdentifierÍ(Í(¨passwordN®BlockStatementÍ(Í*É—Z³VariableDeclarationÍ(Í(1‘[²VariableDeclaratorÍ(!Í(0MªIdentifierÍ(!Í(#¢h1V§LiteralÍ(&Í(0ÎŞ­¾ïª0xdeadbeef£letZ³VariableDeclarationÍ(;Í(O‘[²VariableDeclaratorÍ(?Í(NMªIdentifierÍ(?Í(A¢h2V§LiteralÍ(DÍ(NÎAÆÎWª0x41c6ce57£lete¬ForStatementÍ(YÍ)#Z³VariableDeclarationÍ(^Í(g‘[²VariableDeclaratorÍ(bÍ(gMªIdentifierÍ(bÍ(c¡iV§LiteralÍ(fÍ(g ¡0£letW°BinaryExpressionÍ(iÍ(|MªIdentifierÍ(iÍ(j¡i¡<U°MemberExpressionÍ(mÍ(|MªIdentifierÍ(mÍ(u¨passwordMªIdentifierÍ(vÍ(|¦lengthÂÂX°UpdateExpressionÍ(~Í(¢++ÂMªIdentifierÍ(~Í(¡iN®BlockStatementÍ(ƒÍ)#“Z³VariableDeclarationÍ(’Í(´‘[²VariableDeclaratorÍ(˜Í(³MªIdentifierÍ(˜Í(š¢ch\®CallExpressionÍ(Í(³U°MemberExpressionÍ(Í(°MªIdentifierÍ(Í(¥¨passwordMªIdentifierÍ(¦Í(°ªcharCodeAtÂÂ‘MªIdentifierÍ(±Í(²¡iÂ¥constQ³ExpressionStatementÍ(ÂÍ(æR´AssignmentExpressionÍ(ÂÍ(å¡=MªIdentifierÍ(ÂÍ(Ä¢h1\®CallExpressionÍ(ÇÍ(åU°MemberExpressionÍ(ÇÍ(ĞMªIdentifierÍ(ÇÍ(Ë¤MathMªIdentifierÍ(ÌÍ(Ğ¤imulÂÂ’W°BinaryExpressionÍ(ÑÍ(ØMªIdentifierÍ(ÑÍ(Ó¢h1¡^MªIdentifierÍ(ÖÍ(Ø¢chV§LiteralÍ(ÚÍ(äÎ7y±ª2654435761ÂQ³ExpressionStatementÍ(ôÍ)R´AssignmentExpressionÍ(ôÍ)¡=MªIdentifierÍ(ôÍ(ö¢h2\®CallExpressionÍ(ùÍ)U°MemberExpressionÍ(ùÍ)MªIdentifierÍ(ùÍ(ı¤MathMªIdentifierÍ(şÍ)¤imulÂÂ’W°BinaryExpressionÍ)Í)
+MªIdentifierÍ)Í)¢h2¡^MªIdentifierÍ)Í)
+¢chV§LiteralÍ)Í)Î_5d•ª1597334677Âe¬ForStatementÍ)-Í)ØZ³VariableDeclarationÍ)2Í)?‘[²VariableDeclaratorÍ)6Í)?MªIdentifierÍ)6Í);¥roundV§LiteralÍ)>Í)? ¡0£letW°BinaryExpressionÍ)AÍ)MMªIdentifierÍ)AÍ)F¥round¡<V§LiteralÍ)IÍ)MÍè¤1000X°UpdateExpressionÍ)OÍ)V¢++ÂMªIdentifierÍ)OÍ)T¥roundN®BlockStatementÍ)XÍ)Ø’Q³ExpressionStatementÍ)gÍ)“R´AssignmentExpressionÍ)gÍ)’¡=MªIdentifierÍ)gÍ)i¢h1\®CallExpressionÍ)lÍ)’U°MemberExpressionÍ)lÍ)uMªIdentifierÍ)lÍ)p¤MathMªIdentifierÍ)qÍ)u¤imulÂÂ’W°BinaryExpressionÍ)vÍ)…MªIdentifierÍ)vÍ)x¢h1¡^V§LiteralÍ){Í)…Î7y¹ª0x9e3779b9V§LiteralÍ)‡Í)‘Î7y±ª2654435761ÂQ³ExpressionStatementÍ)¡Í)ÍR´AssignmentExpressionÍ)¡Í)Ì¡=MªIdentifierÍ)¡Í)£¢h2\®CallExpressionÍ)¦Í)ÌU°MemberExpressionÍ)¦Í)¯MªIdentifierÍ)¦Í)ª¤MathMªIdentifierÍ)«Í)¯¤imulÂÂ’W°BinaryExpressionÍ)°Í)¿MªIdentifierÍ)°Í)²¢h2¡^W°BinaryExpressionÍ)¶Í)¾MªIdentifierÍ)¶Í)¸¢h1£>>>V§LiteralÍ)½Í)¾ ¡0V§LiteralÍ)ÁÍ)ËÎ_5d•ª1597334677ÂZ³VariableDeclarationÍ)âÍ*R‘[²VariableDeclaratorÍ)èÍ*QMªIdentifierÍ)èÍ)ì¤hashW°BinaryExpressionÍ)ğÍ*P\®CallExpressionÍ)ğÍ*U°MemberExpressionÍ)ğÍ*\®CallExpressionÍ)ğÍ*U°MemberExpressionÍ)ğÍ*W°BinaryExpressionÍ)ñÍ)ùMªIdentifierÍ)ñÍ)ó¢h1£>>>V§LiteralÍ)øÍ)ù ¡0MªIdentifierÍ)ûÍ*¨toStringÂÂ‘V§LiteralÍ*Í*¢16ÂMªIdentifierÍ*Í*¨padStartÂÂ’V§LiteralÍ*Í*¡8V§LiteralÍ*Í*¡0£'0'Â¡+\®CallExpressionÍ*(Í*PU°MemberExpressionÍ*(Í*H\®CallExpressionÍ*(Í*?U°MemberExpressionÍ*(Í*;W°BinaryExpressionÍ*)Í*1MªIdentifierÍ*)Í*+¢h2£>>>V§LiteralÍ*0Í*1 ¡0MªIdentifierÍ*3Í*;¨toStringÂÂ‘V§LiteralÍ*<Í*>¢16ÂMªIdentifierÍ*@Í*H¨padStartÂÂ’V§LiteralÍ*IÍ*J¡8V§LiteralÍ*LÍ*O¡0£'0'Â¥constQ³ExpressionStatementÍ*\Í*¬\®CallExpressionÍ*\Í*«U°MemberExpressionÍ*\Í*hMªIdentifierÍ*\Í*c§consoleMªIdentifierÍ*dÍ*h¤infoÂÂ”V§LiteralÍ*iÍ*Š¿QuickTrade hashPassword length:Ù!'QuickTrade hashPassword length:'U°MemberExpressionÍ*ŒÍ*›MªIdentifierÍ*ŒÍ*”¨passwordMªIdentifierÍ*•Í*›¦lengthÂÂV§LiteralÍ*Í*¤¥hash:§'hash:'MªIdentifierÍ*¦Í*ª¤hashÂS¯ReturnStatementÍ*¶Í*ÂMªIdentifierÍ*½Í*Á¤hashÀ–Ôrf•¤type¥start£endªspecifiers¦source±ImportDeclaration %‘Ôrg•¤type¥start£end¨imported¥local¯ImportSpecifier	MªIdentifier	¤UserMªIdentifier	¤UserV§Literal$­../model/User¯'../model/User'f±ImportDeclaration'ÌT‘g¯ImportSpecifier08MªIdentifier08¨getStoreMªIdentifier08¨getStoreV§LiteralÌ@ÌS±./DatabaseService³'./DatabaseService'f±ImportDeclarationÌVÌv‘Ôrh”¤type¥start£end¥local¶ImportDefaultSpecifierÌ]ÌbMªIdentifierÌ]Ìb¥hilogV§LiteralÌhÌu«@ohos.hilog­"@ohos.hilog"f±ImportDeclarationÌxÌ©‘h¶ImportDefaultSpecifierÌÌŠMªIdentifierÌÌŠ«preferencesV§LiteralÌÌ¨¶@ohos.data.preferences¸"@ohos.data.preferences"f±ImportDeclarationÌ«Ìİ‘h¶ImportDefaultSpecifierÌ²Ì¼MªIdentifierÌ²Ì¼ªappAccountV§LiteralÌÂÌÜ¸@ohos.account.appAccountº'@ohos.account.appAccount'f±ImportDeclarationÌßÍ‘g¯ImportSpecifierÌèÌğMªIdentifierÌèÌğ¨localISOMªIdentifierÌèÌğ¨localISOV§LiteralÌøÍ¹../common/utils/DateUtils»'../common/utils/DateUtils'

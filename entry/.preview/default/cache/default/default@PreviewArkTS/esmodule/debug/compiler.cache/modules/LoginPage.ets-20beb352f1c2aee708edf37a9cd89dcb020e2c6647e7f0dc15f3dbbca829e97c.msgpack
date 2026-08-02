@@ -1,0 +1,1196 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚÅ´if (!("finalizeConstruction" in ViewPU.prototype)) {
+    Reflect.set(ViewPU.prototype, "finalizeConstruction", () => { });
+}
+/**
+ * ç™»å½•/æ³¨å†Œé¡µ â€” æ”¯æŒå¯†ç ç™»å½• + åä¸ºå¸å·ä¸€é”®ç™»å½•
+ * å¯å…³é—­æ¨¡å¼ï¼šä»éšç§é¡µåŒæ„åç›´æ¥è·³é¦–é¡µï¼Œç™»å½•é¡µä½œä¸ºå¯é€‰å…¥å£
+ */
+import { AuthService } from '../service/AuthService';
+import router from '@ohos.router';
+import promptAction from '@ohos.promptAction';
+class LoginPage extends ViewPU {
+    constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
+        super(parent, __localStorage, elmtId, extraInfo);
+        if (typeof paramsLambda === "function") {
+            this.paramsGenerator_ = paramsLambda;
+        }
+        this.__username = new ObservedPropertySimplePU('', this, "username");
+        this.__password = new ObservedPropertySimplePU('', this, "password");
+        this.__isRegister = new ObservedPropertySimplePU(false, this, "isRegister");
+        this.__loading = new ObservedPropertySimplePU(false, this, "loading");
+        this.__huaweiLoading = new ObservedPropertySimplePU(false, this, "huaweiLoading");
+        this.__agreed = new ObservedPropertySimplePU(false, this, "agreed");
+        this.__privacyView = new ObservedPropertySimplePU('', this, "privacyView");
+        this.setInitiallyProvidedValue(params);
+        this.finalizeConstruction();
+    }
+    setInitiallyProvidedValue(params) {
+        if (params.username !== undefined) {
+            this.username = params.username;
+        }
+        if (params.password !== undefined) {
+            this.password = params.password;
+        }
+        if (params.isRegister !== undefined) {
+            this.isRegister = params.isRegister;
+        }
+        if (params.loading !== undefined) {
+            this.loading = params.loading;
+        }
+        if (params.huaweiLoading !== undefined) {
+            this.huaweiLoading = params.huaweiLoading;
+        }
+        if (params.agreed !== undefined) {
+            this.agreed = params.agreed;
+        }
+        if (params.privacyView !== undefined) {
+            this.privacyView = params.privacyView;
+        }
+    }
+    updateStateVars(params) {
+    }
+    purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__username.purgeDependencyOnElmtId(rmElmtId);
+        this.__password.purgeDependencyOnElmtId(rmElmtId);
+        this.__isRegister.purgeDependencyOnElmtId(rmElmtId);
+        this.__loading.purgeDependencyOnElmtId(rmElmtId);
+        this.__huaweiLoading.purgeDependencyOnElmtId(rmElmtId);
+        this.__agreed.purgeDependencyOnElmtId(rmElmtId);
+        this.__privacyView.purgeDependencyOnElmtId(rmElmtId);
+    }
+    aboutToBeDeleted() {
+        this.__username.aboutToBeDeleted();
+        this.__password.aboutToBeDeleted();
+        this.__isRegister.aboutToBeDeleted();
+        this.__loading.aboutToBeDeleted();
+        this.__huaweiLoading.aboutToBeDeleted();
+        this.__agreed.aboutToBeDeleted();
+        this.__privacyView.aboutToBeDeleted();
+        SubscriberManager.Get().delete(this.id__());
+        this.aboutToBeDeletedInternal();
+    }
+    get username() {
+        return this.__username.get();
+    }
+    set username(newValue) {
+        this.__username.set(newValue);
+    }
+    get password() {
+        return this.__password.get();
+    }
+    set password(newValue) {
+        this.__password.set(newValue);
+    }
+    get isRegister() {
+        return this.__isRegister.get();
+    }
+    set isRegister(newValue) {
+        this.__isRegister.set(newValue);
+    }
+    get loading() {
+        return this.__loading.get();
+    }
+    set loading(newValue) {
+        this.__loading.set(newValue);
+    }
+    get huaweiLoading() {
+        return this.__huaweiLoading.get();
+    }
+    set huaweiLoading(newValue) {
+        this.__huaweiLoading.set(newValue);
+    }
+    get agreed() {
+        return this.__agreed.get();
+    }
+    set agreed(newValue) {
+        this.__agreed.set(newValue);
+    }
+    get privacyView() {
+        return this.__privacyView.get();
+    }
+    set privacyView(newValue) {
+        this.__privacyView.set(newValue);
+    }
+    aboutToAppear() {
+        this.agreed = false;
+    }
+    async submit() {
+        if (!this.agreed) {
+            promptAction.showToast({ message: 'è¯·å…ˆé˜…è¯»å¹¶åŒæ„éšç§æ”¿ç­–å’Œç”¨æˆ·æ¡æ¬¾', duration: 2000 });
+            return;
+        }
+        const u = this.username.trim();
+        const p = this.password.trim();
+        if (!u || !p) {
+            promptAction.showToast({ message: 'è¯·è¾“å…¥ç”¨æˆ·åå’Œå¯†ç ', duration: 1500 });
+            return;
+        }
+        if (u.length < 2) {
+            promptAction.showToast({ message: 'ç”¨æˆ·åè‡³å°‘2ä¸ªå­—ç¬¦', duration: 1500 });
+            return;
+        }
+        if (p.length < 4) {
+            promptAction.showToast({ message: 'å¯†ç è‡³å°‘4ä½', duration: 1500 });
+            return;
+        }
+        this.loading = true;
+        try {
+            if (this.isRegister) {
+                await AuthService.register(u, p);
+                promptAction.showToast({ message: 'æ³¨å†ŒæˆåŠŸ', duration: 1500 });
+            }
+            else {
+                await AuthService.login(u, p);
+            }
+            router.replaceUrl({ url: 'pages/Index' });
+        }
+        catch (e) {
+            const msg = e instanceof Error ? e.message : 'æ“ä½œå¤±è´¥';
+            promptAction.showToast({ message: msg, duration: 2000 });
+        }
+        this.loading = false;
+    }
+    /** åä¸ºå¸å·ä¸€é”®ç™»å½• */
+    async huaweiLogin() {
+        if (!this.agreed) {
+            promptAction.showToast({ message: 'è¯·å…ˆé˜…è¯»å¹¶åŒæ„éšç§æ”¿ç­–å’Œç”¨æˆ·æ¡æ¬¾', duration: 2000 });
+            return;
+        }
+        this.huaweiLoading = true;
+        try {
+            await AuthService.huaweiLogin();
+            promptAction.showToast({ message: 'ç™»å½•æˆåŠŸ', duration: 1500 });
+            router.replaceUrl({ url: 'pages/Index' });
+        }
+        catch (e) {
+            const msg = e instanceof Error ? e.message : 'åä¸ºç™»å½•å¤±è´¥';
+            promptAction.showToast({ message: msg, duration: 2000 });
+        }
+        this.huaweiLoading = false;
+    }
+    /** ä»¥æ¸¸å®¢èº«ä»½è¿›å…¥ */
+    goAsGuest() {
+        router.replaceUrl({ url: 'pages/Index' });
+    }
+    /** æ˜¾ç¤ºéšç§/æ¡æ¬¾æ‚¬æµ®çª— */
+    showPrivacyView(type) {
+        this.privacyView = type;
+    }
+    initialRender() {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Stack.create();
+            Stack.debugLine("entry/src/main/ets/pages/LoginPage.ets(97:5)", "entry");
+            Stack.width('100%');
+            Stack.height('100%');
+        }, Stack);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.debugLine("entry/src/main/ets/pages/LoginPage.ets(98:7)", "entry");
+            Column.width('100%');
+            Column.height('100%');
+            Column.backgroundColor('#fff');
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Scroll.create();
+            Scroll.debugLine("entry/src/main/ets/pages/LoginPage.ets(99:9)", "entry");
+            Scroll.layoutWeight(1);
+            Scroll.scrollBar(BarState.Off);
+        }, Scroll);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.debugLine("entry/src/main/ets/pages/LoginPage.ets(100:11)", "entry");
+            Column.width('80%');
+            Column.alignSelf(ItemAlign.Center);
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(101:13)", "entry");
+            Text.height(40);
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('å¿«è®°äº¤æ˜“');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(103:13)", "entry");
+            Text.fontSize(28);
+            Text.fontWeight(FontWeight.Bold);
+            Text.fontColor('#27ae60');
+            Text.margin({ bottom: 8 });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('AI è¯­éŸ³è®°è´¦');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(104:13)", "entry");
+            Text.fontSize(14);
+            Text.fontColor('#999');
+            Text.margin({ bottom: 32 });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // === åä¸ºå¸å·ä¸€é”®ç™»å½• ===
+            Button.createWithChild();
+            Button.debugLine("entry/src/main/ets/pages/LoginPage.ets(107:13)", "entry");
+            // === åä¸ºå¸å·ä¸€é”®ç™»å½• ===
+            Button.width('100%');
+            // === åä¸ºå¸å·ä¸€é”®ç™»å½• ===
+            Button.height(48);
+            // === åä¸ºå¸å·ä¸€é”®ç™»å½• ===
+            Button.backgroundColor('#cf0a2c');
+            // === åä¸ºå¸å·ä¸€é”®ç™»å½• ===
+            Button.borderRadius(8);
+            // === åä¸ºå¸å·ä¸€é”®ç™»å½• ===
+            Button.enabled(this.agreed && !this.huaweiLoading);
+            // === åä¸ºå¸å·ä¸€é”®ç™»å½• ===
+            Button.onClick(() => this.huaweiLogin());
+            // === åä¸ºå¸å·ä¸€é”®ç™»å½• ===
+            Button.margin({ bottom: 24 });
+        }, Button);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            if (this.huaweiLoading) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        LoadingProgress.create();
+                        LoadingProgress.debugLine("entry/src/main/ets/pages/LoginPage.ets(109:17)", "entry");
+                        LoadingProgress.width(20);
+                        LoadingProgress.height(20);
+                        LoadingProgress.color('#fff');
+                    }, LoadingProgress);
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Row.create();
+                        Row.debugLine("entry/src/main/ets/pages/LoginPage.ets(111:17)", "entry");
+                    }, Row);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('ğŸ”‘');
+                        Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(112:19)", "entry");
+                        Text.fontSize(20);
+                        Text.margin({ right: 8 });
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('åä¸ºå¸å·ä¸€é”®ç™»å½•');
+                        Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(113:19)", "entry");
+                        Text.fontSize(16);
+                        Text.fontColor('#fff');
+                    }, Text);
+                    Text.pop();
+                    Row.pop();
+                });
+            }
+        }, If);
+        If.pop();
+        // === åä¸ºå¸å·ä¸€é”®ç™»å½• ===
+        Button.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // === åˆ†å‰²çº¿ ===
+            Row.create();
+            Row.debugLine("entry/src/main/ets/pages/LoginPage.ets(125:13)", "entry");
+            // === åˆ†å‰²çº¿ ===
+            Row.width('100%');
+            // === åˆ†å‰²çº¿ ===
+            Row.margin({ bottom: 16 });
+        }, Row);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Divider.create();
+            Divider.debugLine("entry/src/main/ets/pages/LoginPage.ets(126:15)", "entry");
+            Divider.width('30%');
+        }, Divider);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('  æˆ–ä½¿ç”¨å¯†ç   ');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(127:15)", "entry");
+            Text.fontSize(13);
+            Text.fontColor('#ccc');
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Divider.create();
+            Divider.debugLine("entry/src/main/ets/pages/LoginPage.ets(128:15)", "entry");
+            Divider.width('30%');
+        }, Divider);
+        // === åˆ†å‰²çº¿ ===
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // === å¯†ç ç™»å½•/æ³¨å†Œè¡¨å• ===
+            TextInput.create({ placeholder: 'ç”¨æˆ·å', text: this.username });
+            TextInput.debugLine("entry/src/main/ets/pages/LoginPage.ets(134:13)", "entry");
+            // === å¯†ç ç™»å½•/æ³¨å†Œè¡¨å• ===
+            TextInput.onChange((v) => this.username = v);
+            // === å¯†ç ç™»å½•/æ³¨å†Œè¡¨å• ===
+            TextInput.width('100%');
+            // === å¯†ç ç™»å½•/æ³¨å†Œè¡¨å• ===
+            TextInput.height(48);
+            // === å¯†ç ç™»å½•/æ³¨å†Œè¡¨å• ===
+            TextInput.margin({ bottom: 16 });
+            // === å¯†ç ç™»å½•/æ³¨å†Œè¡¨å• ===
+            TextInput.borderRadius(8);
+            // === å¯†ç ç™»å½•/æ³¨å†Œè¡¨å• ===
+            TextInput.backgroundColor('#f5f5f5');
+        }, TextInput);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            TextInput.create({ placeholder: 'å¯†ç ', text: this.password });
+            TextInput.debugLine("entry/src/main/ets/pages/LoginPage.ets(139:13)", "entry");
+            TextInput.type(InputType.Password);
+            TextInput.onChange((v) => this.password = v);
+            TextInput.width('100%');
+            TextInput.height(48);
+            TextInput.margin({ bottom: 24 });
+            TextInput.borderRadius(8);
+            TextInput.backgroundColor('#f5f5f5');
+        }, TextInput);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Button.createWithLabel(this.buttonText);
+            Button.debugLine("entry/src/main/ets/pages/LoginPage.ets(145:13)", "entry");
+            Button.width('100%');
+            Button.height(48);
+            Button.fontSize(16);
+            Button.backgroundColor('#27ae60');
+            Button.borderRadius(8);
+            Button.enabled(this.agreed && !this.loading);
+            Button.onClick(() => this.submit());
+        }, Button);
+        Button.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // === åˆ‡æ¢ç™»å½•/æ³¨å†Œ ===
+            Row.create();
+            Row.debugLine("entry/src/main/ets/pages/LoginPage.ets(152:13)", "entry");
+            // === åˆ‡æ¢ç™»å½•/æ³¨å†Œ ===
+            Row.margin({ top: 16 });
+            // === åˆ‡æ¢ç™»å½•/æ³¨å†Œ ===
+            Row.width('100%');
+            // === åˆ‡æ¢ç™»å½•/æ³¨å†Œ ===
+            Row.justifyContent(FlexAlign.Center);
+        }, Row);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.isRegister ? 'å·²æœ‰è´¦å·ï¼Ÿ' : 'æ²¡æœ‰è´¦å·ï¼Ÿ');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(153:15)", "entry");
+            Text.fontSize(13);
+            Text.fontColor('#999');
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.isRegister ? 'å»ç™»å½•' : 'å»æ³¨å†Œ');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(154:15)", "entry");
+            Text.fontSize(13);
+            Text.fontColor('#27ae60');
+            Text.onClick(() => { this.isRegister = !this.isRegister; });
+        }, Text);
+        Text.pop();
+        // === åˆ‡æ¢ç™»å½•/æ³¨å†Œ ===
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // === éšç§æ¡æ¬¾ï¼ˆå¯å‹¾é€‰ï¼‰===
+            Row.create();
+            Row.debugLine("entry/src/main/ets/pages/LoginPage.ets(162:13)", "entry");
+            // === éšç§æ¡æ¬¾ï¼ˆå¯å‹¾é€‰ï¼‰===
+            Row.margin({ top: 20 });
+            // === éšç§æ¡æ¬¾ï¼ˆå¯å‹¾é€‰ï¼‰===
+            Row.width('100%');
+            // === éšç§æ¡æ¬¾ï¼ˆå¯å‹¾é€‰ï¼‰===
+            Row.justifyContent(FlexAlign.Center);
+        }, Row);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.agreed ? 'â˜‘' : 'â˜');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(163:15)", "entry");
+            Text.fontSize(16);
+            Text.fontColor('#666');
+            Text.onClick(() => { this.agreed = !this.agreed; });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(' å·²é˜…è¯»å¹¶åŒæ„ ');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(165:15)", "entry");
+            Text.fontSize(12);
+            Text.fontColor('#999');
+            Text.onClick(() => { this.agreed = !this.agreed; });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('éšç§æ”¿ç­–');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(167:15)", "entry");
+            Text.fontSize(12);
+            Text.fontColor('#2d6be0');
+            Text.decoration({ type: TextDecorationType.Underline });
+            Text.onClick(() => { this.showPrivacyView('privacy'); });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(' å’Œ ');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(170:15)", "entry");
+            Text.fontSize(12);
+            Text.fontColor('#999');
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('ç”¨æˆ·æ¡æ¬¾');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(171:15)", "entry");
+            Text.fontSize(12);
+            Text.fontColor('#2d6be0');
+            Text.decoration({ type: TextDecorationType.Underline });
+            Text.onClick(() => { this.showPrivacyView('terms'); });
+        }, Text);
+        Text.pop();
+        // === éšç§æ¡æ¬¾ï¼ˆå¯å‹¾é€‰ï¼‰===
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // === è·³è¿‡ï¼Œå…ˆçœ‹çœ‹ ===
+            Text.create('è·³è¿‡ï¼Œå…ˆçœ‹çœ‹');
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(180:13)", "entry");
+            // === è·³è¿‡ï¼Œå…ˆçœ‹çœ‹ ===
+            Text.fontSize(14);
+            // === è·³è¿‡ï¼Œå…ˆçœ‹çœ‹ ===
+            Text.fontColor('#999');
+            // === è·³è¿‡ï¼Œå…ˆçœ‹çœ‹ ===
+            Text.margin({ top: 24, bottom: 36 });
+            // === è·³è¿‡ï¼Œå…ˆçœ‹çœ‹ ===
+            Text.onClick(() => this.goAsGuest());
+        }, Text);
+        // === è·³è¿‡ï¼Œå…ˆçœ‹çœ‹ ===
+        Text.pop();
+        Column.pop();
+        Scroll.pop();
+        Column.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            // === éšç§/æ¡æ¬¾æ‚¬æµ®çª— ===
+            if (this.privacyView !== '') {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Column.create();
+                        Column.debugLine("entry/src/main/ets/pages/LoginPage.ets(197:9)", "entry");
+                        Column.width('100%');
+                        Column.height('100%');
+                        Column.backgroundColor('#00000050');
+                        Column.onClick(() => { this.privacyView = ''; });
+                    }, Column);
+                    Column.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Column.create();
+                        Column.debugLine("entry/src/main/ets/pages/LoginPage.ets(203:9)", "entry");
+                        Column.width('100%');
+                        Column.justifyContent(FlexAlign.Center);
+                    }, Column);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Column.create();
+                        Column.debugLine("entry/src/main/ets/pages/LoginPage.ets(204:11)", "entry");
+                        Column.width('85%');
+                        Column.height('70%');
+                        Column.padding(20);
+                        Column.backgroundColor('#fff');
+                        Column.borderRadius(16);
+                    }, Column);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Row.create();
+                        Row.debugLine("entry/src/main/ets/pages/LoginPage.ets(205:13)", "entry");
+                        Row.width('100%');
+                        Row.margin({ bottom: 12 });
+                    }, Row);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create(this.privacyView === 'privacy' ? 'ğŸ“„ éšç§æ”¿ç­–' : 'ğŸ“„ ç”¨æˆ·æ¡æ¬¾');
+                        Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(206:15)", "entry");
+                        Text.fontSize(17);
+                        Text.fontWeight(FontWeight.Bold);
+                        Text.layoutWeight(1);
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('âœ•');
+                        Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(208:15)", "entry");
+                        Text.fontSize(20);
+                        Text.fontColor('#999');
+                        Text.onClick(() => { this.privacyView = ''; });
+                    }, Text);
+                    Text.pop();
+                    Row.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Scroll.create();
+                        Scroll.debugLine("entry/src/main/ets/pages/LoginPage.ets(214:13)", "entry");
+                        Scroll.layoutWeight(1);
+                        Scroll.scrollBar(BarState.Off);
+                    }, Scroll);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Column.create();
+                        Column.debugLine("entry/src/main/ets/pages/LoginPage.ets(215:15)", "entry");
+                        Column.width('100%');
+                        Column.padding({ bottom: 8 });
+                    }, Column);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        If.create();
+                        if (this.privacyView === 'privacy') {
+                            this.ifElseBranchUpdateFunction(0, () => {
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '1. ä¿¡æ¯æ”¶é›†', content: 'æœ¬åº”ç”¨ä»…æ”¶é›†æ‚¨ä¸»åŠ¨æä¾›çš„ä¿¡æ¯ï¼š\nâ€¢ ç”¨æˆ·åå’Œå¯†ç ï¼ˆåŠ å¯†å­˜å‚¨ï¼Œä»…ç”¨äºç™»å½•éªŒè¯ï¼‰\nâ€¢ æ‚¨å½•å…¥çš„äº¤æ˜“è®°å½•ï¼ˆé‡‘é¢ã€å“ç±»ã€å¤‡æ³¨ç­‰ï¼‰\nâ€¢ éº¦å…‹é£æƒé™ï¼ˆä»…ç”¨äºè¯­éŸ³è®°è´¦åŠŸèƒ½ï¼Œéœ€æ‚¨ä¸»åŠ¨è§¦å‘ï¼‰\n\næˆ‘ä»¬ä¸ä¼šæ”¶é›†æ‚¨çš„è®¾å¤‡æ ‡è¯†ã€ä½ç½®ã€é€šè®¯å½•æˆ–å…¶ä»–æ•æ„Ÿä¿¡æ¯ã€‚' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 217, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '1. ä¿¡æ¯æ”¶é›†',
+                                                    content: 'æœ¬åº”ç”¨ä»…æ”¶é›†æ‚¨ä¸»åŠ¨æä¾›çš„ä¿¡æ¯ï¼š\nâ€¢ ç”¨æˆ·åå’Œå¯†ç ï¼ˆåŠ å¯†å­˜å‚¨ï¼Œä»…ç”¨äºç™»å½•éªŒè¯ï¼‰\nâ€¢ æ‚¨å½•å…¥çš„äº¤æ˜“è®°å½•ï¼ˆé‡‘é¢ã€å“ç±»ã€å¤‡æ³¨ç­‰ï¼‰\nâ€¢ éº¦å…‹é£æƒé™ï¼ˆä»…ç”¨äºè¯­éŸ³è®°è´¦åŠŸèƒ½ï¼Œéœ€æ‚¨ä¸»åŠ¨è§¦å‘ï¼‰\n\næˆ‘ä»¬ä¸ä¼šæ”¶é›†æ‚¨çš„è®¾å¤‡æ ‡è¯†ã€ä½ç½®ã€é€šè®¯å½•æˆ–å…¶ä»–æ•æ„Ÿä¿¡æ¯ã€‚'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '1. ä¿¡æ¯æ”¶é›†', content: 'æœ¬åº”ç”¨ä»…æ”¶é›†æ‚¨ä¸»åŠ¨æä¾›çš„ä¿¡æ¯ï¼š\nâ€¢ ç”¨æˆ·åå’Œå¯†ç ï¼ˆåŠ å¯†å­˜å‚¨ï¼Œä»…ç”¨äºç™»å½•éªŒè¯ï¼‰\nâ€¢ æ‚¨å½•å…¥çš„äº¤æ˜“è®°å½•ï¼ˆé‡‘é¢ã€å“ç±»ã€å¤‡æ³¨ç­‰ï¼‰\nâ€¢ éº¦å…‹é£æƒé™ï¼ˆä»…ç”¨äºè¯­éŸ³è®°è´¦åŠŸèƒ½ï¼Œéœ€æ‚¨ä¸»åŠ¨è§¦å‘ï¼‰\n\næˆ‘ä»¬ä¸ä¼šæ”¶é›†æ‚¨çš„è®¾å¤‡æ ‡è¯†ã€ä½ç½®ã€é€šè®¯å½•æˆ–å…¶ä»–æ•æ„Ÿä¿¡æ¯ã€‚'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '2. ä¿¡æ¯ä½¿ç”¨', content: 'æ‚¨çš„æ‰€æœ‰æ•°æ®ä»…å­˜å‚¨åœ¨è®¾å¤‡æœ¬åœ°æ•°æ®åº“ä¸­ã€‚æˆ‘ä»¬ä¸å‘ä»»ä½•ç¬¬ä¸‰æ–¹ä¼ è¾“æ‚¨çš„æ•°æ®ã€‚è¯­éŸ³è¯†åˆ«é€šè¿‡æ‚¨æŒ‡å®šçš„ AI æ¥å£å¤„ç†ï¼Œä¸ä¼šç”¨äºæ¨¡å‹è®­ç»ƒã€‚' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 218, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '2. ä¿¡æ¯ä½¿ç”¨',
+                                                    content: 'æ‚¨çš„æ‰€æœ‰æ•°æ®ä»…å­˜å‚¨åœ¨è®¾å¤‡æœ¬åœ°æ•°æ®åº“ä¸­ã€‚æˆ‘ä»¬ä¸å‘ä»»ä½•ç¬¬ä¸‰æ–¹ä¼ è¾“æ‚¨çš„æ•°æ®ã€‚è¯­éŸ³è¯†åˆ«é€šè¿‡æ‚¨æŒ‡å®šçš„ AI æ¥å£å¤„ç†ï¼Œä¸ä¼šç”¨äºæ¨¡å‹è®­ç»ƒã€‚'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '2. ä¿¡æ¯ä½¿ç”¨', content: 'æ‚¨çš„æ‰€æœ‰æ•°æ®ä»…å­˜å‚¨åœ¨è®¾å¤‡æœ¬åœ°æ•°æ®åº“ä¸­ã€‚æˆ‘ä»¬ä¸å‘ä»»ä½•ç¬¬ä¸‰æ–¹ä¼ è¾“æ‚¨çš„æ•°æ®ã€‚è¯­éŸ³è¯†åˆ«é€šè¿‡æ‚¨æŒ‡å®šçš„ AI æ¥å£å¤„ç†ï¼Œä¸ä¼šç”¨äºæ¨¡å‹è®­ç»ƒã€‚'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '3. ä¿¡æ¯å­˜å‚¨', content: 'æ•°æ®å­˜å‚¨åœ¨è®¾å¤‡æœ¬åœ° SQLite æ•°æ®åº“ä¸­ã€‚åˆ é™¤åº”ç”¨æˆ–æ¸…é™¤æ•°æ®å°†æ°¸ä¹…åˆ é™¤æ‰€æœ‰è®°å½•ã€‚å»ºè®®æ‚¨å®šæœŸé€šè¿‡è®¾ç½®é¡µçš„"æ•°æ®å¯¼å‡º"åŠŸèƒ½å¤‡ä»½æ•°æ®ã€‚' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 219, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '3. ä¿¡æ¯å­˜å‚¨',
+                                                    content: 'æ•°æ®å­˜å‚¨åœ¨è®¾å¤‡æœ¬åœ° SQLite æ•°æ®åº“ä¸­ã€‚åˆ é™¤åº”ç”¨æˆ–æ¸…é™¤æ•°æ®å°†æ°¸ä¹…åˆ é™¤æ‰€æœ‰è®°å½•ã€‚å»ºè®®æ‚¨å®šæœŸé€šè¿‡è®¾ç½®é¡µçš„"æ•°æ®å¯¼å‡º"åŠŸèƒ½å¤‡ä»½æ•°æ®ã€‚'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '3. ä¿¡æ¯å­˜å‚¨', content: 'æ•°æ®å­˜å‚¨åœ¨è®¾å¤‡æœ¬åœ° SQLite æ•°æ®åº“ä¸­ã€‚åˆ é™¤åº”ç”¨æˆ–æ¸…é™¤æ•°æ®å°†æ°¸ä¹…åˆ é™¤æ‰€æœ‰è®°å½•ã€‚å»ºè®®æ‚¨å®šæœŸé€šè¿‡è®¾ç½®é¡µçš„"æ•°æ®å¯¼å‡º"åŠŸèƒ½å¤‡ä»½æ•°æ®ã€‚'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '4. ç¬¬ä¸‰æ–¹æœåŠ¡', content: 'è¯­éŸ³è¯†åˆ«åŠŸèƒ½å¯èƒ½è°ƒç”¨ç¬¬ä¸‰æ–¹ AI æ¥å£ã€‚è¿™äº›æ¥å£ä»…æ¥æ”¶æ‚¨ä¸Šä¼ çš„è¯­éŸ³æ•°æ®ï¼Œä¸ä¼šè·å–æ‚¨çš„è´¦æˆ·ä¿¡æ¯æˆ–å…¶ä»–æ•°æ®ã€‚' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 220, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '4. ç¬¬ä¸‰æ–¹æœåŠ¡',
+                                                    content: 'è¯­éŸ³è¯†åˆ«åŠŸèƒ½å¯èƒ½è°ƒç”¨ç¬¬ä¸‰æ–¹ AI æ¥å£ã€‚è¿™äº›æ¥å£ä»…æ¥æ”¶æ‚¨ä¸Šä¼ çš„è¯­éŸ³æ•°æ®ï¼Œä¸ä¼šè·å–æ‚¨çš„è´¦æˆ·ä¿¡æ¯æˆ–å…¶ä»–æ•°æ®ã€‚'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '4. ç¬¬ä¸‰æ–¹æœåŠ¡', content: 'è¯­éŸ³è¯†åˆ«åŠŸèƒ½å¯èƒ½è°ƒç”¨ç¬¬ä¸‰æ–¹ AI æ¥å£ã€‚è¿™äº›æ¥å£ä»…æ¥æ”¶æ‚¨ä¸Šä¼ çš„è¯­éŸ³æ•°æ®ï¼Œä¸ä¼šè·å–æ‚¨çš„è´¦æˆ·ä¿¡æ¯æˆ–å…¶ä»–æ•°æ®ã€‚'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '5. ç”¨æˆ·æƒåˆ©', content: 'æ‚¨å¯ä»¥éšæ—¶ï¼š\nâ€¢ åœ¨è®¾ç½®ä¸­å¯¼å‡ºæ‚¨çš„å…¨éƒ¨æ•°æ®\nâ€¢ åˆ é™¤å•æ¡æˆ–å…¨éƒ¨äº¤æ˜“è®°å½•\nâ€¢ æ³¨é”€è´¦å·ï¼ˆåˆ é™¤æ‰€æœ‰æ•°æ®ï¼‰\nâ€¢ æ’¤å›éº¦å…‹é£æƒé™æˆæƒ' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 221, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '5. ç”¨æˆ·æƒåˆ©',
+                                                    content: 'æ‚¨å¯ä»¥éšæ—¶ï¼š\nâ€¢ åœ¨è®¾ç½®ä¸­å¯¼å‡ºæ‚¨çš„å…¨éƒ¨æ•°æ®\nâ€¢ åˆ é™¤å•æ¡æˆ–å…¨éƒ¨äº¤æ˜“è®°å½•\nâ€¢ æ³¨é”€è´¦å·ï¼ˆåˆ é™¤æ‰€æœ‰æ•°æ®ï¼‰\nâ€¢ æ’¤å›éº¦å…‹é£æƒé™æˆæƒ'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '5. ç”¨æˆ·æƒåˆ©', content: 'æ‚¨å¯ä»¥éšæ—¶ï¼š\nâ€¢ åœ¨è®¾ç½®ä¸­å¯¼å‡ºæ‚¨çš„å…¨éƒ¨æ•°æ®\nâ€¢ åˆ é™¤å•æ¡æˆ–å…¨éƒ¨äº¤æ˜“è®°å½•\nâ€¢ æ³¨é”€è´¦å·ï¼ˆåˆ é™¤æ‰€æœ‰æ•°æ®ï¼‰\nâ€¢ æ’¤å›éº¦å…‹é£æƒé™æˆæƒ'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '6. è”ç³»æ–¹å¼', content: 'å¦‚æœ‰ä»»ä½•éšç§ç›¸å…³é—®é¢˜ï¼Œè¯·é€šè¿‡ä»¥ä¸‹æ–¹å¼è”ç³»æˆ‘ä»¬ï¼š\né‚®ç®±ï¼š445816282@qq.com' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 222, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '6. è”ç³»æ–¹å¼',
+                                                    content: 'å¦‚æœ‰ä»»ä½•éšç§ç›¸å…³é—®é¢˜ï¼Œè¯·é€šè¿‡ä»¥ä¸‹æ–¹å¼è”ç³»æˆ‘ä»¬ï¼š\né‚®ç®±ï¼š445816282@qq.com'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '6. è”ç³»æ–¹å¼', content: 'å¦‚æœ‰ä»»ä½•éšç§ç›¸å…³é—®é¢˜ï¼Œè¯·é€šè¿‡ä»¥ä¸‹æ–¹å¼è”ç³»æˆ‘ä»¬ï¼š\né‚®ç®±ï¼š445816282@qq.com'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                            });
+                        }
+                        else {
+                            this.ifElseBranchUpdateFunction(1, () => {
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '1. æœåŠ¡è¯´æ˜', content: 'æœ¬åº”ç”¨ï¼ˆ"å¿«è®°äº¤æ˜“"ï¼‰æä¾›ä¸ªäººè®°è´¦åŠ AI è¯­éŸ³è®°è´¦åŠŸèƒ½ã€‚æ‚¨ä½¿ç”¨æœ¬åº”ç”¨å³è¡¨ç¤ºåŒæ„æœ¬æ¡æ¬¾ã€‚' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 224, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '1. æœåŠ¡è¯´æ˜',
+                                                    content: 'æœ¬åº”ç”¨ï¼ˆ"å¿«è®°äº¤æ˜“"ï¼‰æä¾›ä¸ªäººè®°è´¦åŠ AI è¯­éŸ³è®°è´¦åŠŸèƒ½ã€‚æ‚¨ä½¿ç”¨æœ¬åº”ç”¨å³è¡¨ç¤ºåŒæ„æœ¬æ¡æ¬¾ã€‚'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '1. æœåŠ¡è¯´æ˜', content: 'æœ¬åº”ç”¨ï¼ˆ"å¿«è®°äº¤æ˜“"ï¼‰æä¾›ä¸ªäººè®°è´¦åŠ AI è¯­éŸ³è®°è´¦åŠŸèƒ½ã€‚æ‚¨ä½¿ç”¨æœ¬åº”ç”¨å³è¡¨ç¤ºåŒæ„æœ¬æ¡æ¬¾ã€‚'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '2. ç”¨æˆ·è´£ä»»', content: 'â€¢ æ‚¨å¯¹å½•å…¥æ•°æ®çš„å‡†ç¡®æ€§å’Œåˆæ³•æ€§è´Ÿè´£\nâ€¢ ä¸å¾—åˆ©ç”¨æœ¬åº”ç”¨ä»äº‹è¿æ³•è¿è§„æ´»åŠ¨\nâ€¢ åº”å¦¥å–„ä¿ç®¡è´¦å·å¯†ç ï¼Œå› å¯†ç æ³„éœ²å¯¼è‡´çš„æŸå¤±ç”±æ‚¨è‡ªè¡Œæ‰¿æ‹…' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 225, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '2. ç”¨æˆ·è´£ä»»',
+                                                    content: 'â€¢ æ‚¨å¯¹å½•å…¥æ•°æ®çš„å‡†ç¡®æ€§å’Œåˆæ³•æ€§è´Ÿè´£\nâ€¢ ä¸å¾—åˆ©ç”¨æœ¬åº”ç”¨ä»äº‹è¿æ³•è¿è§„æ´»åŠ¨\nâ€¢ åº”å¦¥å–„ä¿ç®¡è´¦å·å¯†ç ï¼Œå› å¯†ç æ³„éœ²å¯¼è‡´çš„æŸå¤±ç”±æ‚¨è‡ªè¡Œæ‰¿æ‹…'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '2. ç”¨æˆ·è´£ä»»', content: 'â€¢ æ‚¨å¯¹å½•å…¥æ•°æ®çš„å‡†ç¡®æ€§å’Œåˆæ³•æ€§è´Ÿè´£\nâ€¢ ä¸å¾—åˆ©ç”¨æœ¬åº”ç”¨ä»äº‹è¿æ³•è¿è§„æ´»åŠ¨\nâ€¢ åº”å¦¥å–„ä¿ç®¡è´¦å·å¯†ç ï¼Œå› å¯†ç æ³„éœ²å¯¼è‡´çš„æŸå¤±ç”±æ‚¨è‡ªè¡Œæ‰¿æ‹…'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '3. å…è´£å£°æ˜', content: 'â€¢ æœ¬åº”ç”¨æŒ‰"ç°çŠ¶"æä¾›æœåŠ¡ï¼Œä¸ä¿è¯æœåŠ¡ä¸ä¼šä¸­æ–­\nâ€¢ AI è¯­éŸ³è¯†åˆ«ç»“æœä»…ä¾›å‚è€ƒï¼Œä¸æ„æˆè´¢åŠ¡å»ºè®®\nâ€¢ å› ä¸å¯æŠ—åŠ›å¯¼è‡´çš„æ•°æ®ä¸¢å¤±ï¼Œå¼€å‘è€…ä¸æ‰¿æ‹…è´£ä»»' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 226, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '3. å…è´£å£°æ˜',
+                                                    content: 'â€¢ æœ¬åº”ç”¨æŒ‰"ç°çŠ¶"æä¾›æœåŠ¡ï¼Œä¸ä¿è¯æœåŠ¡ä¸ä¼šä¸­æ–­\nâ€¢ AI è¯­éŸ³è¯†åˆ«ç»“æœä»…ä¾›å‚è€ƒï¼Œä¸æ„æˆè´¢åŠ¡å»ºè®®\nâ€¢ å› ä¸å¯æŠ—åŠ›å¯¼è‡´çš„æ•°æ®ä¸¢å¤±ï¼Œå¼€å‘è€…ä¸æ‰¿æ‹…è´£ä»»'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '3. å…è´£å£°æ˜', content: 'â€¢ æœ¬åº”ç”¨æŒ‰"ç°çŠ¶"æä¾›æœåŠ¡ï¼Œä¸ä¿è¯æœåŠ¡ä¸ä¼šä¸­æ–­\nâ€¢ AI è¯­éŸ³è¯†åˆ«ç»“æœä»…ä¾›å‚è€ƒï¼Œä¸æ„æˆè´¢åŠ¡å»ºè®®\nâ€¢ å› ä¸å¯æŠ—åŠ›å¯¼è‡´çš„æ•°æ®ä¸¢å¤±ï¼Œå¼€å‘è€…ä¸æ‰¿æ‹…è´£ä»»'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '4. çŸ¥è¯†äº§æƒ', content: 'æœ¬åº”ç”¨çš„æ‰€æœ‰æƒåˆ©ï¼ˆåŒ…æ‹¬ä½†ä¸é™äºè½¯ä»¶è‘—ä½œæƒã€å•†æ ‡æƒï¼‰å½’å¼€å‘è€…æ‰€æœ‰ã€‚æœªç»è®¸å¯ï¼Œä¸å¾—å¤åˆ¶ã€ä¿®æ”¹ã€åˆ†å‘æœ¬åº”ç”¨ã€‚' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 227, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '4. çŸ¥è¯†äº§æƒ',
+                                                    content: 'æœ¬åº”ç”¨çš„æ‰€æœ‰æƒåˆ©ï¼ˆåŒ…æ‹¬ä½†ä¸é™äºè½¯ä»¶è‘—ä½œæƒã€å•†æ ‡æƒï¼‰å½’å¼€å‘è€…æ‰€æœ‰ã€‚æœªç»è®¸å¯ï¼Œä¸å¾—å¤åˆ¶ã€ä¿®æ”¹ã€åˆ†å‘æœ¬åº”ç”¨ã€‚'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '4. çŸ¥è¯†äº§æƒ', content: 'æœ¬åº”ç”¨çš„æ‰€æœ‰æƒåˆ©ï¼ˆåŒ…æ‹¬ä½†ä¸é™äºè½¯ä»¶è‘—ä½œæƒã€å•†æ ‡æƒï¼‰å½’å¼€å‘è€…æ‰€æœ‰ã€‚æœªç»è®¸å¯ï¼Œä¸å¾—å¤åˆ¶ã€ä¿®æ”¹ã€åˆ†å‘æœ¬åº”ç”¨ã€‚'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '5. æ¡æ¬¾å˜æ›´', content: 'æˆ‘ä»¬å¯èƒ½ä¼šä¸æ—¶æ›´æ–°æœ¬æ¡æ¬¾ã€‚é‡å¤§å˜æ›´å°†é€šè¿‡åº”ç”¨å†…é€šçŸ¥å‘ŠçŸ¥æ‚¨ã€‚ç»§ç»­ä½¿ç”¨å³è¡¨ç¤ºæ¥å—å˜æ›´åçš„æ¡æ¬¾ã€‚' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 228, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '5. æ¡æ¬¾å˜æ›´',
+                                                    content: 'æˆ‘ä»¬å¯èƒ½ä¼šä¸æ—¶æ›´æ–°æœ¬æ¡æ¬¾ã€‚é‡å¤§å˜æ›´å°†é€šè¿‡åº”ç”¨å†…é€šçŸ¥å‘ŠçŸ¥æ‚¨ã€‚ç»§ç»­ä½¿ç”¨å³è¡¨ç¤ºæ¥å—å˜æ›´åçš„æ¡æ¬¾ã€‚'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '5. æ¡æ¬¾å˜æ›´', content: 'æˆ‘ä»¬å¯èƒ½ä¼šä¸æ—¶æ›´æ–°æœ¬æ¡æ¬¾ã€‚é‡å¤§å˜æ›´å°†é€šè¿‡åº”ç”¨å†…é€šçŸ¥å‘ŠçŸ¥æ‚¨ã€‚ç»§ç»­ä½¿ç”¨å³è¡¨ç¤ºæ¥å—å˜æ›´åçš„æ¡æ¬¾ã€‚'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                                {
+                                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                        if (isInitialRender) {
+                                            let componentCall = new PolicyItem(this, { title: '6. è”ç³»æˆ‘ä»¬', content: 'å¦‚æœ‰ä»»ä½•é—®é¢˜ï¼Œè¯·å‘é€é‚®ä»¶è‡³ï¼š\n445816282@qq.com' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/LoginPage.ets", line: 229, col: 19 });
+                                            ViewPU.create(componentCall);
+                                            let paramsLambda = () => {
+                                                return {
+                                                    title: '6. è”ç³»æˆ‘ä»¬',
+                                                    content: 'å¦‚æœ‰ä»»ä½•é—®é¢˜ï¼Œè¯·å‘é€é‚®ä»¶è‡³ï¼š\n445816282@qq.com'
+                                                };
+                                            };
+                                            componentCall.paramsGenerator_ = paramsLambda;
+                                        }
+                                        else {
+                                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                                title: '6. è”ç³»æˆ‘ä»¬', content: 'å¦‚æœ‰ä»»ä½•é—®é¢˜ï¼Œè¯·å‘é€é‚®ä»¶è‡³ï¼š\n445816282@qq.com'
+                                            });
+                                        }
+                                    }, { name: "PolicyItem" });
+                                }
+                            });
+                        }
+                    }, If);
+                    If.pop();
+                    Column.pop();
+                    Scroll.pop();
+                    Column.pop();
+                    Column.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        Stack.pop();
+    }
+    rerender() {
+        this.updateDirtyElements();
+    }
+    static getEntryName() {
+        return "LoginPage";
+    }
+}
+class PolicyItem extends ViewPU {
+    constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
+        super(parent, __localStorage, elmtId, extraInfo);
+        if (typeof paramsLambda === "function") {
+            this.paramsGenerator_ = paramsLambda;
+        }
+        this.__title = new SynchedPropertySimpleOneWayPU(params.title, this, "title");
+        this.__content = new SynchedPropertySimpleOneWayPU(params.content, this, "content");
+        this.setInitiallyProvidedValue(params);
+        this.finalizeConstruction();
+    }
+    setInitiallyProvidedValue(params) {
+        if (params.title === undefined) {
+            this.__title.set('');
+        }
+        if (params.content === undefined) {
+            this.__content.set('');
+        }
+    }
+    updateStateVars(params) {
+        this.__title.reset(params.title);
+        this.__content.reset(params.content);
+    }
+    purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__title.purgeDependencyOnElmtId(rmElmtId);
+        this.__content.purgeDependencyOnElmtId(rmElmtId);
+    }
+    aboutToBeDeleted() {
+        this.__title.aboutToBeDeleted();
+        this.__content.aboutToBeDeleted();
+        SubscriberManager.Get().delete(this.id__());
+        this.aboutToBeDeletedInternal();
+    }
+    get title() {
+        return this.__title.get();
+    }
+    set title(newValue) {
+        this.__title.set(newValue);
+    }
+    get content() {
+        return this.__content.get();
+    }
+    set content(newValue) {
+        this.__content.set(newValue);
+    }
+    initialRender() {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.debugLine("entry/src/main/ets/pages/LoginPage.ets(260:5)", "entry");
+            Column.width('100%');
+            Column.alignItems(HorizontalAlign.Start);
+            Column.margin({ bottom: 16 });
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.title);
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(261:7)", "entry");
+            Text.fontSize(14);
+            Text.fontWeight(FontWeight.Medium);
+            Text.fontColor('#333');
+            Text.width('100%');
+            Text.margin({ bottom: 6 });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.content);
+            Text.debugLine("entry/src/main/ets/pages/LoginPage.ets(268:7)", "entry");
+            Text.fontSize(13);
+            Text.fontColor('#666');
+            Text.lineHeight(20);
+            Text.width('100%');
+        }, Text);
+        Text.pop();
+        Column.pop();
+    }
+    rerender() {
+        this.updateDirtyElements();
+    }
+}
+registerNamedRoute(() => new LoginPage(undefined, {}), "", { bundleName: "com.xiaolin.quicktrade", moduleName: "entry", pagePath: "pages/LoginPage", pageFullPath: "entry/src/main/ets/pages/LoginPage", integratedHsp: "false", moduleType: "followWithHap" });
+//# sourceMappingURL=LoginPage.js.mapÂ“Ù8D:\QuickTrade\entry\src\main\ets\service\AuthService.etsÙf hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.router.d.tsÙl hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.promptAction.d.tsÙ4D:\QuickTrade\entry\src\main\ets\pages\LoginPage.etsÔrBšªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¥entryÃÂ³D:\QuickTrade\entry­D:\QuickTrade¥entry¥1.0.0Ô  ³D:\QuickTrade\entryÃÃÚ+ü/**
+ * ç™»å½•/æ³¨å†Œé¡µ â€” æ”¯æŒå¯†ç ç™»å½• + åä¸ºå¸å·ä¸€é”®ç™»å½•
+ * å¯å…³é—­æ¨¡å¼ï¼šä»éšç§é¡µåŒæ„åç›´æ¥è·³é¦–é¡µï¼Œç™»å½•é¡µä½œä¸ºå¯é€‰å…¥å£
+ */
+import { AuthService } from '../service/AuthService'
+import router from '@ohos.router'
+import promptAction from '@ohos.promptAction'
+
+@Entry
+@Component
+struct LoginPage {
+  @State username: string = ''
+  @State password: string = ''
+  @State isRegister: boolean = false
+  @State loading: boolean = false
+  @State huaweiLoading: boolean = false
+  @State agreed: boolean = false
+  @State privacyView: string = ''
+
+  get title(): string {
+    return this.isRegister ? 'ğŸ“ æ³¨å†Œ' : 'ğŸ” ç™»å½•'
+  }
+
+  get buttonText(): string {
+    return this.isRegister ? 'æ³¨å†Œ' : 'ç™»å½•'
+  }
+
+  aboutToAppear() {
+    this.agreed = false
+  }
+
+  async submit() {
+    if (!this.agreed) {
+      promptAction.showToast({ message: 'è¯·å…ˆé˜…è¯»å¹¶åŒæ„éšç§æ”¿ç­–å’Œç”¨æˆ·æ¡æ¬¾', duration: 2000 })
+      return
+    }
+    const u = this.username.trim()
+    const p = this.password.trim()
+    if (!u || !p) {
+      promptAction.showToast({ message: 'è¯·è¾“å…¥ç”¨æˆ·åå’Œå¯†ç ', duration: 1500 })
+      return
+    }
+    if (u.length < 2) {
+      promptAction.showToast({ message: 'ç”¨æˆ·åè‡³å°‘2ä¸ªå­—ç¬¦', duration: 1500 })
+      return
+    }
+    if (p.length < 4) {
+      promptAction.showToast({ message: 'å¯†ç è‡³å°‘4ä½', duration: 1500 })
+      return
+    }
+
+    this.loading = true
+    try {
+      if (this.isRegister) {
+        await AuthService.register(u, p)
+        promptAction.showToast({ message: 'æ³¨å†ŒæˆåŠŸ', duration: 1500 })
+      } else {
+        await AuthService.login(u, p)
+      }
+      router.replaceUrl({ url: 'pages/Index' })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'æ“ä½œå¤±è´¥'
+      promptAction.showToast({ message: msg, duration: 2000 })
+    }
+    this.loading = false
+  }
+
+  /** åä¸ºå¸å·ä¸€é”®ç™»å½• */
+  async huaweiLogin() {
+    if (!this.agreed) {
+      promptAction.showToast({ message: 'è¯·å…ˆé˜…è¯»å¹¶åŒæ„éšç§æ”¿ç­–å’Œç”¨æˆ·æ¡æ¬¾', duration: 2000 })
+      return
+    }
+    this.huaweiLoading = true
+    try {
+      await AuthService.huaweiLogin()
+      promptAction.showToast({ message: 'ç™»å½•æˆåŠŸ', duration: 1500 })
+      router.replaceUrl({ url: 'pages/Index' })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'åä¸ºç™»å½•å¤±è´¥'
+      promptAction.showToast({ message: msg, duration: 2000 })
+    }
+    this.huaweiLoading = false
+  }
+
+  /** ä»¥æ¸¸å®¢èº«ä»½è¿›å…¥ */
+  goAsGuest() {
+    router.replaceUrl({ url: 'pages/Index' })
+  }
+
+  /** æ˜¾ç¤ºéšç§/æ¡æ¬¾æ‚¬æµ®çª— */
+  showPrivacyView(type: string) {
+    this.privacyView = type
+  }
+
+  build() {
+    Stack() {
+      Column() {
+        Scroll() {
+          Column() {
+            Text('').height(40)
+
+            Text('å¿«è®°äº¤æ˜“').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#27ae60').margin({ bottom: 8 })
+            Text('AI è¯­éŸ³è®°è´¦').fontSize(14).fontColor('#999').margin({ bottom: 32 })
+
+            // === åä¸ºå¸å·ä¸€é”®ç™»å½• ===
+            Button() {
+              if (this.huaweiLoading) {
+                LoadingProgress().width(20).height(20).color('#fff')
+              } else {
+                Row() {
+                  Text('ğŸ”‘').fontSize(20).margin({ right: 8 })
+                  Text('åä¸ºå¸å·ä¸€é”®ç™»å½•').fontSize(16).fontColor('#fff')
+                }
+              }
+            }
+            .width('100%').height(48)
+            .backgroundColor('#cf0a2c')
+            .borderRadius(8)
+            .enabled(this.agreed && !this.huaweiLoading)
+            .onClick(() => this.huaweiLogin())
+            .margin({ bottom: 24 })
+
+            // === åˆ†å‰²çº¿ ===
+            Row() {
+              Divider().width('30%')
+              Text('  æˆ–ä½¿ç”¨å¯†ç   ').fontSize(13).fontColor('#ccc')
+              Divider().width('30%')
+            }
+            .width('100%')
+            .margin({ bottom: 16 })
+
+            // === å¯†ç ç™»å½•/æ³¨å†Œè¡¨å• ===
+            TextInput({ placeholder: 'ç”¨æˆ·å', text: this.username })
+              .onChange((v: string) => this.username = v)
+              .width('100%').height(48).margin({ bottom: 16 })
+              .borderRadius(8).backgroundColor('#f5f5f5')
+
+            TextInput({ placeholder: 'å¯†ç ', text: this.password })
+              .type(InputType.Password)
+              .onChange((v: string) => this.password = v)
+              .width('100%').height(48).margin({ bottom: 24 })
+              .borderRadius(8).backgroundColor('#f5f5f5')
+
+            Button(this.buttonText)
+              .width('100%').height(48).fontSize(16)
+              .backgroundColor('#27ae60').borderRadius(8)
+              .enabled(this.agreed && !this.loading)
+              .onClick(() => this.submit())
+
+            // === åˆ‡æ¢ç™»å½•/æ³¨å†Œ ===
+            Row() {
+              Text(this.isRegister ? 'å·²æœ‰è´¦å·ï¼Ÿ' : 'æ²¡æœ‰è´¦å·ï¼Ÿ').fontSize(13).fontColor('#999')
+              Text(this.isRegister ? 'å»ç™»å½•' : 'å»æ³¨å†Œ').fontSize(13).fontColor('#27ae60')
+                .onClick(() => { this.isRegister = !this.isRegister })
+            }
+            .margin({ top: 16 })
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+
+            // === éšç§æ¡æ¬¾ï¼ˆå¯å‹¾é€‰ï¼‰===
+            Row() {
+              Text(this.agreed ? 'â˜‘' : 'â˜').fontSize(16).fontColor('#666')
+                .onClick(() => { this.agreed = !this.agreed })
+              Text(' å·²é˜…è¯»å¹¶åŒæ„ ').fontSize(12).fontColor('#999')
+                .onClick(() => { this.agreed = !this.agreed })
+              Text('éšç§æ”¿ç­–').fontSize(12).fontColor('#2d6be0')
+                .decoration({ type: TextDecorationType.Underline })
+                .onClick(() => { this.showPrivacyView('privacy') })
+              Text(' å’Œ ').fontSize(12).fontColor('#999')
+              Text('ç”¨æˆ·æ¡æ¬¾').fontSize(12).fontColor('#2d6be0')
+                .decoration({ type: TextDecorationType.Underline })
+                .onClick(() => { this.showPrivacyView('terms') })
+            }
+            .margin({ top: 20 })
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+
+            // === è·³è¿‡ï¼Œå…ˆçœ‹çœ‹ ===
+            Text('è·³è¿‡ï¼Œå…ˆçœ‹çœ‹')
+              .fontSize(14).fontColor('#999')
+              .margin({ top: 24, bottom: 36 })
+              .onClick(() => this.goAsGuest())
+          }
+          .width('80%')
+          .alignSelf(ItemAlign.Center)
+        }
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('#fff')
+
+      // === éšç§/æ¡æ¬¾æ‚¬æµ®çª— ===
+      if (this.privacyView !== '') {
+        Column() {
+        }
+        .width('100%').height('100%')
+        .backgroundColor('#00000050')
+        .onClick(() => { this.privacyView = '' })
+
+        Column() {
+          Column() {
+            Row() {
+              Text(this.privacyView === 'privacy' ? 'ğŸ“„ éšç§æ”¿ç­–' : 'ğŸ“„ ç”¨æˆ·æ¡æ¬¾')
+                .fontSize(17).fontWeight(FontWeight.Bold).layoutWeight(1)
+              Text('âœ•').fontSize(20).fontColor('#999')
+                .onClick(() => { this.privacyView = '' })
+            }
+            .width('100%')
+            .margin({ bottom: 12 })
+
+            Scroll() {
+              Column() {
+                if (this.privacyView === 'privacy') {
+                  PolicyItem({ title: '1. ä¿¡æ¯æ”¶é›†', content: 'æœ¬åº”ç”¨ä»…æ”¶é›†æ‚¨ä¸»åŠ¨æä¾›çš„ä¿¡æ¯ï¼š\nâ€¢ ç”¨æˆ·åå’Œå¯†ç ï¼ˆåŠ å¯†å­˜å‚¨ï¼Œä»…ç”¨äºç™»å½•éªŒè¯ï¼‰\nâ€¢ æ‚¨å½•å…¥çš„äº¤æ˜“è®°å½•ï¼ˆé‡‘é¢ã€å“ç±»ã€å¤‡æ³¨ç­‰ï¼‰\nâ€¢ éº¦å…‹é£æƒé™ï¼ˆä»…ç”¨äºè¯­éŸ³è®°è´¦åŠŸèƒ½ï¼Œéœ€æ‚¨ä¸»åŠ¨è§¦å‘ï¼‰\n\næˆ‘ä»¬ä¸ä¼šæ”¶é›†æ‚¨çš„è®¾å¤‡æ ‡è¯†ã€ä½ç½®ã€é€šè®¯å½•æˆ–å…¶ä»–æ•æ„Ÿä¿¡æ¯ã€‚' })
+                  PolicyItem({ title: '2. ä¿¡æ¯ä½¿ç”¨', content: 'æ‚¨çš„æ‰€æœ‰æ•°æ®ä»…å­˜å‚¨åœ¨è®¾å¤‡æœ¬åœ°æ•°æ®åº“ä¸­ã€‚æˆ‘ä»¬ä¸å‘ä»»ä½•ç¬¬ä¸‰æ–¹ä¼ è¾“æ‚¨çš„æ•°æ®ã€‚è¯­éŸ³è¯†åˆ«é€šè¿‡æ‚¨æŒ‡å®šçš„ AI æ¥å£å¤„ç†ï¼Œä¸ä¼šç”¨äºæ¨¡å‹è®­ç»ƒã€‚' })
+                  PolicyItem({ title: '3. ä¿¡æ¯å­˜å‚¨', content: 'æ•°æ®å­˜å‚¨åœ¨è®¾å¤‡æœ¬åœ° SQLite æ•°æ®åº“ä¸­ã€‚åˆ é™¤åº”ç”¨æˆ–æ¸…é™¤æ•°æ®å°†æ°¸ä¹…åˆ é™¤æ‰€æœ‰è®°å½•ã€‚å»ºè®®æ‚¨å®šæœŸé€šè¿‡è®¾ç½®é¡µçš„"æ•°æ®å¯¼å‡º"åŠŸèƒ½å¤‡ä»½æ•°æ®ã€‚' })
+                  PolicyItem({ title: '4. ç¬¬ä¸‰æ–¹æœåŠ¡', content: 'è¯­éŸ³è¯†åˆ«åŠŸèƒ½å¯èƒ½è°ƒç”¨ç¬¬ä¸‰æ–¹ AI æ¥å£ã€‚è¿™äº›æ¥å£ä»…æ¥æ”¶æ‚¨ä¸Šä¼ çš„è¯­éŸ³æ•°æ®ï¼Œä¸ä¼šè·å–æ‚¨çš„è´¦æˆ·ä¿¡æ¯æˆ–å…¶ä»–æ•°æ®ã€‚' })
+                  PolicyItem({ title: '5. ç”¨æˆ·æƒåˆ©', content: 'æ‚¨å¯ä»¥éšæ—¶ï¼š\nâ€¢ åœ¨è®¾ç½®ä¸­å¯¼å‡ºæ‚¨çš„å…¨éƒ¨æ•°æ®\nâ€¢ åˆ é™¤å•æ¡æˆ–å…¨éƒ¨äº¤æ˜“è®°å½•\nâ€¢ æ³¨é”€è´¦å·ï¼ˆåˆ é™¤æ‰€æœ‰æ•°æ®ï¼‰\nâ€¢ æ’¤å›éº¦å…‹é£æƒé™æˆæƒ' })
+                  PolicyItem({ title: '6. è”ç³»æ–¹å¼', content: 'å¦‚æœ‰ä»»ä½•éšç§ç›¸å…³é—®é¢˜ï¼Œè¯·é€šè¿‡ä»¥ä¸‹æ–¹å¼è”ç³»æˆ‘ä»¬ï¼š\né‚®ç®±ï¼š445816282@qq.com' })
+                } else {
+                  PolicyItem({ title: '1. æœåŠ¡è¯´æ˜', content: 'æœ¬åº”ç”¨ï¼ˆ"å¿«è®°äº¤æ˜“"ï¼‰æä¾›ä¸ªäººè®°è´¦åŠ AI è¯­éŸ³è®°è´¦åŠŸèƒ½ã€‚æ‚¨ä½¿ç”¨æœ¬åº”ç”¨å³è¡¨ç¤ºåŒæ„æœ¬æ¡æ¬¾ã€‚' })
+                  PolicyItem({ title: '2. ç”¨æˆ·è´£ä»»', content: 'â€¢ æ‚¨å¯¹å½•å…¥æ•°æ®çš„å‡†ç¡®æ€§å’Œåˆæ³•æ€§è´Ÿè´£\nâ€¢ ä¸å¾—åˆ©ç”¨æœ¬åº”ç”¨ä»äº‹è¿æ³•è¿è§„æ´»åŠ¨\nâ€¢ åº”å¦¥å–„ä¿ç®¡è´¦å·å¯†ç ï¼Œå› å¯†ç æ³„éœ²å¯¼è‡´çš„æŸå¤±ç”±æ‚¨è‡ªè¡Œæ‰¿æ‹…' })
+                  PolicyItem({ title: '3. å…è´£å£°æ˜', content: 'â€¢ æœ¬åº”ç”¨æŒ‰"ç°çŠ¶"æä¾›æœåŠ¡ï¼Œä¸ä¿è¯æœåŠ¡ä¸ä¼šä¸­æ–­\nâ€¢ AI è¯­éŸ³è¯†åˆ«ç»“æœä»…ä¾›å‚è€ƒï¼Œä¸æ„æˆè´¢åŠ¡å»ºè®®\nâ€¢ å› ä¸å¯æŠ—åŠ›å¯¼è‡´çš„æ•°æ®ä¸¢å¤±ï¼Œå¼€å‘è€…ä¸æ‰¿æ‹…è´£ä»»' })
+                  PolicyItem({ title: '4. çŸ¥è¯†äº§æƒ', content: 'æœ¬åº”ç”¨çš„æ‰€æœ‰æƒåˆ©ï¼ˆåŒ…æ‹¬ä½†ä¸é™äºè½¯ä»¶è‘—ä½œæƒã€å•†æ ‡æƒï¼‰å½’å¼€å‘è€…æ‰€æœ‰ã€‚æœªç»è®¸å¯ï¼Œä¸å¾—å¤åˆ¶ã€ä¿®æ”¹ã€åˆ†å‘æœ¬åº”ç”¨ã€‚' })
+                  PolicyItem({ title: '5. æ¡æ¬¾å˜æ›´', content: 'æˆ‘ä»¬å¯èƒ½ä¼šä¸æ—¶æ›´æ–°æœ¬æ¡æ¬¾ã€‚é‡å¤§å˜æ›´å°†é€šè¿‡åº”ç”¨å†…é€šçŸ¥å‘ŠçŸ¥æ‚¨ã€‚ç»§ç»­ä½¿ç”¨å³è¡¨ç¤ºæ¥å—å˜æ›´åçš„æ¡æ¬¾ã€‚' })
+                  PolicyItem({ title: '6. è”ç³»æˆ‘ä»¬', content: 'å¦‚æœ‰ä»»ä½•é—®é¢˜ï¼Œè¯·å‘é€é‚®ä»¶è‡³ï¼š\n445816282@qq.com' })
+                }
+              }
+              .width('100%')
+              .padding({ bottom: 8 })
+            }
+            .layoutWeight(1)
+            .scrollBar(BarState.Off)
+          }
+          .width('85%')
+          .height('70%')
+          .padding(20)
+          .backgroundColor('#fff')
+          .borderRadius(16)
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+      }
+    }
+    .width('100%')
+    .height('100%')
+  }
+}
+
+/** éšç§/æ¡æ¬¾æ®µè½ç»„ä»¶ */
+@Component
+struct PolicyItem {
+  @Prop title: string = ''
+  @Prop content: string = ''
+
+  build() {
+    Column() {
+      Text(this.title)
+        .fontSize(14)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#333')
+        .width('100%')
+        .margin({ bottom: 6 })
+
+      Text(this.content)
+        .fontSize(13)
+        .fontColor('#666')
+        .lineHeight(20)
+        .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .margin({ bottom: 16 })
+  }
+}
+ÀÔrC“¬@ohos.router²@ohos.promptAction¶../service/AuthServiceÔrD—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÃÙf hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.router.d.tsÔrE‘¯hostModulesInfo‘ÔrF’²hostDependencyName®hostModuleName¬@ohos.router¥entryÃªoh-resolveÂDAÃÙl hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.promptAction.d.tsE‘F²@ohos.promptAction¥entryÃªoh-resolveÂDAÂÙ8D:\QuickTrade\entry\src\main\ets\service\AuthService.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings¬LoginPage.js ‘­LoginPage.etsÜa‘”    ‘” ˜”   ” ”	 	” ” ” ”4 4”5 4–”   ” ” ” ”! !”" !–”   ” ” ” ”- -”. -’” 
+” 
+‘”  ’”7 ”9 ’”7 ”9 ’”9 ”> $’”6 ”; !’”< "”ÌA '’”5 ”:  ’”: ”< !‘” -’” 	” ’” 	” ’” 	” ’” 	” ’” 	” ’” 	” ’” 	” ’” 	” ’” 	” ’” 	” ’” 	” ’” 	” ’” 	” ’” 	” ’” ” —” ” ” 	” ” ” ” ’” ” ”” ”	 ”
+ ” —”  ”  ”  	”  ”  ”  ”  Ü ” !” !” !”" !”# !”% !”, !&”. !(”Ì@ !:”ÌB !<”ÌJ !ÌD”ÌL !ÌF”ÌP !ÌJ”ÌR !ÌL”ÌS !ÌM”ÌT !ÌM’” "” "‘”	 #›” $” $
+” $” $” $” $” $”  $”$ $ ”& $"”' $"›” %” %
+” %” %” %” %” %”  %”$ % ”& %"”' %"˜” &” &” &	” &
+” &” &” &” &Ü ” '” '” '”" '”# '”% '”, '&”. '(”9 '3”; '5”ÌC '=”ÌE '?”ÌI 'ÌC”ÌK 'ÌE”ÌL 'ÌF”ÌM 'ÌF’” (” (‘”	 )˜” *” *” *	” *
+” *” *” *” *Ü ” +” +” +”" +”# +”% +”, +&”. +(”9 +3”; +5”ÌC +=”ÌE +?”ÌI +ÌC”ÌK +ÌE”ÌL +ÌF”ÌM +ÌF’” ,” ,‘”	 -˜” .” .” .	” .
+” .” .” .” .Ü ” /” /” /”" /”# /”% /”, /&”. /(”6 /0”8 /2”Ì@ /:”ÌB /<”ÌF /Ì@”ÌH /ÌB”ÌI /ÌC”ÌJ /ÌC’” 0” 0‘”	 1—” 3” 3” 3	” 3” 3” 3” 3’” 4” 4–” 5” 5
+” 5” 5” 5”! 5›” 6” 6”! 6”" 6”* 6"”+ 6#”, 6$”. 6&”/ 6'”0 6(”1 6(Ü ” 7” 7” 7”& 7”' 7”) 7!”0 7(”2 7*”8 70”: 72”ÌB 7:”ÌD 7<”ÌH 7Ì@”ÌJ 7ÌB”ÌK 7ÌC”ÌL 7ÌC‘” 8‘” 8›” 9” 9”! 9”" 9”' 9”( 9 ”) 9!”+ 9#”, 9$”- 9%”. 9%‘” :œ” ;” ;” ;” ;” ;”  ;”# ;”% ;”2 ;,”4 ;.”5 ;/”6 ;/‘”	 <”” <” <” <” <Ü ” =” =” =” =” =”% =”* =$”+ =%”, =&”- ='”. =(”/ =)”6 =0”7 =1”8 =2”9 =3”? =9”Ì@ =9Ü ” >” >” >”" >”# >”% >”, >&”. >(”1 >+”3 >-”; >5”= >7”ÌA >;”ÌC >=”ÌD >>”ÌE >>‘”	 ?—” Ì@” Ì@” Ì@	” Ì@” Ì@” Ì@” Ì@’” ÌA” ÌA’” ÌC” ÌC”” ÌD”	 ÌD”
+ ÌD” ÌD—” ÌE” ÌE” ÌE	” ÌE” ÌE” ÌE” ÌEÜ ” ÌF” ÌF” ÌF”" ÌF”# ÌF”% ÌF”, ÌF&”. ÌF(”Ì@ ÌF:”ÌB ÌF<”ÌJ ÌFÌD”ÌL ÌFÌF”ÌP ÌFÌJ”ÌR ÌFÌL”ÌS ÌFÌM”ÌT ÌFÌM’” ÌG” ÌG‘”	 ÌH—” ÌI” ÌI” ÌI	” ÌI” ÌI”! ÌI”" ÌI’” ÌJ” ÌJ—” ÌK” ÌK” ÌK” ÌK”) ÌK#”+ ÌK%”, ÌK%Ü ” ÌL” ÌL” ÌL”" ÌL”# ÌL”% ÌL”, ÌL&”. ÌL(”4 ÌL.”6 ÌL0”> ÌL8”Ì@ ÌL:”ÌD ÌL>”ÌF ÌLÌ@”ÌG ÌLÌA”ÌH ÌLÌAœ” ÌM” ÌM” ÌM” ÌM” ÌM”  ÌM”# ÌM”% ÌM”2 ÌM,”4 ÌM.”5 ÌM/”6 ÌM/‘”	 ÌN”” ÌN” ÌN” ÌN” ÌNÜ ” ÌO” ÌO” ÌO” ÌO” ÌO”% ÌO”* ÌO$”+ ÌO%”, ÌO&”- ÌO'”. ÌO(”/ ÌO)”6 ÌO0”7 ÌO1”8 ÌO2”9 ÌO3”ÌA ÌO;”ÌB ÌO;Ü ” ÌP” ÌP” ÌP”" ÌP”# ÌP”% ÌP”, ÌP&”. ÌP(”1 ÌP+”3 ÌP-”; ÌP5”= ÌP7”ÌA ÌP;”ÌC ÌP=”ÌD ÌP>”ÌE ÌP>‘”	 ÌQ—” ÌR” ÌR” ÌR	” ÌR” ÌR”" ÌR”# ÌR’” ÌS” ÌS’” ÌU” ÌU’” ÌV” ÌVœ” ÌW” ÌW
+” ÌW” ÌW” ÌW” ÌW” ÌW”! ÌW”. ÌW*”0 ÌW,”1 ÌW-”2 ÌW-’” ÌX” ÌX’” ÌZ” ÌZ”” Ì[” Ì[” Ì[” Ì[—” Ì\” Ì\” Ì\	” Ì\” Ì\” Ì\”  Ì\’” Ì]” Ì]‘” Ì_’” Ì`” Ì`	–” Ì`” Ì`	” Ì÷” Ì÷
+” Ì÷” Ì÷–” Ì`” Ì`	” Ìø” Ìø” Ìø” Ìø’” Ìa” Ìa–” Ìa” Ìa” Ì¾” Ì¾” Ì¾” Ì¾–” Ìa” Ìa” Ì¿” Ì¿” Ì¿”  Ì¿–” Ìa” Ìa” ÌÀ”" ÌÀ”# ÌÀ”) ÌÀ’” Ìb” Ìb–” Ìb” Ìb” Ì»	” Ì»”  Ì»”! Ì»˜” Ìb” Ìb” Ì¼	” Ì¼” Ì¼”% Ì¼”& Ì¼”) Ì¼’” Ìc
+” Ìc–” Ìc
+” Ìc” Ì¸” Ì¸” Ì¸” Ì¸˜” Ìc
+” Ìc” Ì¹” Ì¹” Ì¹”& Ì¹”' Ì¹”- Ì¹%”” Ìd” Ìd” Ìd” Ìd–” Ìd” Ìd” Ìd” Ìd” Ìd” Ìd’” Ìd” Ìd”” Ìf” Ìf” Ìf” Ìf–” Ìf” Ìf” Ìf” Ìf!” Ìf"” Ìf$˜” Ìf” Ìf” Ìf&” Ìf0” Ìf1”& Ìf;”' Ìf<”+ ÌfÌ@–” Ìf” Ìf” ÌfÌB” ÌfÌK” ÌfÌL”$ ÌfÌUš” Ìf” Ìf” ÌfÌW” ÌfÌ]” ÌfÌ^” ÌfÌ`”  ÌfÌf”" ÌfÌh”# ÌfÌi”% ÌfÌk’” Ìf” Ìf”” Ìg” Ìg” Ìg”! Ìg–” Ìg” Ìg” Ìg” Ìg$” Ìg%” Ìg'–” Ìg” Ìg” Ìg)” Ìg2” Ìg3”! Ìg9š” Ìg” Ìg” Ìg;” ÌgÌA” ÌgÌB” ÌgÌD”  ÌgÌJ”" ÌgÌL”$ ÌgÌN”& ÌgÌP’” Ìg” Ìg’” Ìi” Ìi’” Ìj” Ìj’” Ìi” Ìi–” Ìj” Ìj” Ìt” Ìt” Ìt” Ìt’” Ìi” Ìi–” Ìj” Ìj” Ìt” Ìt!” Ìt"” Ìt$’” Ìi” Ìi–” Ìj” Ìj” Ìu”" Ìu”# Ìu”, Ìu&’” Ìi” Ìi–” Ìj” Ìj” Ìv” Ìv”  Ìv”! Ìv’” Ìi” Ìi” Ìj” Ìj” Ìw” Ìw” Ìw” Ìw”  Ìw”& Ìw ”* Ìw$”+ Ìw%”/ Ìw)”0 Ìw*”= Ìw7’” Ìi” Ìiœ” Ìj” Ìj” Ìx” Ìx” Ìx” Ìx”  Ìx”! Ìx”% Ìx”& Ìx ”1 Ìx+”3 Ìx-’” Ìi” Ìiš” Ìj” Ìj” Ìy” Ìy” Ìy” Ìy”" Ìy”$ Ìy”& Ìy ”( Ìy"–” Ìk” Ìk” Ìk” Ìk”" Ìk$”$ Ìk&’” Ìl”' Ìl–” Ìl”' Ìl”( Ìl"”- Ìl'”. Ìl(”0 Ìl*–” Ìl”' Ìl”( Ìl,”. Ìl2”/ Ìl3”1 Ìl5–” Ìl”' Ìl”( Ìl7”- Ìl<”. Ìl=”4 ÌlÌC‘” Ìm‘” Ìm’” Ìn” Ìn”” Ìo” Ìo”$ Ìo”( Ìo–” Ìo” Ìo” Ìo”% Ìo%”& Ìo&”( Ìo(š” Ìo” Ìo” Ìo*”# Ìo0”$ Ìo1”& Ìo3”+ Ìo8”- Ìo:”. Ìo;”0 Ìo=’” Ìo” Ìo”” Ìp” Ìp”$ Ìp”. Ìp!–” Ìp” Ìp” Ìp#”% Ìp+”& Ìp,”( Ìp.–” Ìp” Ìp” Ìp0”& Ìp9”' Ìp:”- ÌpÌ@’” Ìp” Ìp’” Ìn” Ìn‘” Ìr’” Ìi” Ìi’” Ìj” Ìj’” Ì{” Ì{’” Ì|” Ì|’” Ì{” Ì{–” Ì|” Ì|” Ì” Ì” Ì” Ì’” Ì{” Ì{š” Ì|” Ì|” Ì‚” Ì‚” Ì‚” Ì‚” Ì‚”! Ì‚”# Ì‚ ”% Ì‚"’” Ì}” Ì}–” Ì}” Ì}” Ì}” Ì}” Ì}” Ì}#”” Ì~” Ì~” Ì~”# Ì~–” Ì~” Ì~” Ì~ ” Ì~(” Ì~)” Ì~+–” Ì~” Ì~” Ì~-” Ì~6” Ì~7”! Ì~=’” Ì~” Ì~’” Ì” Ì–” Ì” Ì” Ì” Ì” Ì” Ì#’” Ì{” Ì{’” Ì|” Ì|’” Ì„”  Ì„ ” Ì…” Ì…” Ì…” Ì…”* Ì…#”, Ì…%”1 Ì…*”3 Ì…,”7 Ì…0”9 Ì…2”= Ì…6”> Ì…7”ÌF Ì…?”ÌH Ì…ÌA’” Ì„”  Ì„ Ÿ” Ì…” Ì…” Ì†” Ì†” Ì†”  Ì†”! Ì†"”# Ì†$”% Ì†&”& Ì†'”* Ì†+”+ Ì†,”3 Ì†4”6 Ì†7”7 Ì†8’” Ì„”  Ì„ –” Ì…” Ì…” Ì‡” Ì‡” Ì‡”" Ì‡’” Ì„”  Ì„ –” Ì…” Ì…” Ì‡” Ì‡#” Ì‡$” Ì‡&’” Ì„”  Ì„ š” Ì…” Ì…” Ì‡(” Ì‡.” Ì‡/” Ì‡1”% Ì‡7”' Ì‡9”) Ì‡;”+ Ì‡=’” Ì„”  Ì„ –” Ì…” Ì…” Ìˆ”" Ìˆ”# Ìˆ”$ Ìˆ’” Ì„”  Ì„ –” Ì…” Ì…” Ìˆ”% Ìˆ.”& Ìˆ/”/ Ìˆ8” ÌŠ” ÌŠ” ÌŠ” ÌŠ”* ÌŠ#”, ÌŠ%”0 ÌŠ)”2 ÌŠ+”6 ÌŠ/”8 ÌŠ1”< ÌŠ5”= ÌŠ6”ÌE ÌŠ>”ÌG ÌŠÌ@˜” ÌŠ” ÌŠ” Ì‹” Ì‹” Ì‹”$ Ì‹”% Ì‹”- Ì‹&Ÿ” ÌŠ” ÌŠ” ÌŒ” ÌŒ” ÌŒ”  ÌŒ”! ÌŒ"”# ÌŒ$”% ÌŒ&”& ÌŒ'”* ÌŒ+”+ ÌŒ,”3 ÌŒ4”6 ÌŒ7”7 ÌŒ8–” ÌŠ” ÌŠ” Ì” Ì” Ì”" Ì–” ÌŠ” ÌŠ” Ì” Ì#” Ì$” Ì&š” ÌŠ” ÌŠ” Ì(” Ì.” Ì/” Ì1”% Ì7”' Ì9”) Ì;”+ Ì=–” ÌŠ” ÌŠ” Ì”" Ì”# Ì”$ Ì–” ÌŠ” ÌŠ” Ì”% Ì.”& Ì/”/ Ì8–” Ì” Ì”# Ì”' Ì”( Ì”2 Ì"–” Ì” Ì” Ì‘” Ì‘” Ì‘” Ì‘–” Ì” Ì” Ì‘” Ì‘#” Ì‘$” Ì‘&–” Ì” Ì” Ì‘(” Ì‘0” Ì‘1” Ì‘3–” Ì” Ì” Ì’”" Ì’”# Ì’”, Ì’(–” Ì” Ì” Ì’*” Ì’6”  Ì’7”! Ì’8” Ì” Ì” Ì“” Ì“” Ì“” Ì“”  Ì“”& Ì“"”* Ì“&”+ Ì“'”/ Ì“+”0 Ì“,”7 Ì“3œ” Ì” Ì” Ì”” Ì”” Ì”” Ì””  Ì””! Ì””% Ì”!”& Ì”"”, Ì”(”. Ì”*’” Ì” Ì’” Ì–” Ì–’” Ì—” Ì—’” Ì–” Ì–š” Ì—” Ì—” Ìœ” Ìœ” Ìœ” Ìœ” Ìœ” Ìœ”  Ìœ”" Ìœ’” Ì–” Ì––” Ì—” Ì—” Ì” Ì” Ì” Ì’” Ì–” Ì–˜” Ì—” Ì—” Ì” Ì” Ì”( Ì%”) Ì&”/ Ì,” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜”' Ì˜"”( Ì˜#”) Ì˜$”* Ì˜%”1 Ì˜,”2 Ì˜-”3 Ì˜.”4 Ì˜/”; Ì˜6–” Ì˜” Ì˜” Ì˜8” Ì˜Ì@” Ì˜ÌA” Ì˜ÌC–” Ì˜” Ì˜” Ì˜ÌE” Ì˜ÌN” Ì˜ÌO”! Ì˜ÌU’” Ì˜” Ì˜” Ì™” Ì™” Ì™” Ì™” Ì™”' Ì™"”( Ì™#”) Ì™$”* Ì™%”/ Ì™*”0 Ì™+”1 Ì™,”2 Ì™-”7 Ì™2–” Ì™” Ì™” Ì™4” Ì™<” Ì™=” Ì™?–” Ì™” Ì™” Ì™ÌA” Ì™ÌJ” Ì™ÌK”$ Ì™ÌTÜ ” Ì™” Ì™” Ìš” Ìš” Ìš” Ìš” Ìš”! Ìš!”% Ìš%”& Ìš&”0 Ìš0”3 Ìš3”4 Ìš4”8 Ìš8”9 Ìš9”ÌC ÌšÌC”ÌD ÌšÌC”ÌE ÌšÌD”ÌF ÌšÌE’” Ì™” Ì™’” Ì–” Ì–’” Ì—” Ì—’” Ì ” Ì ’” Ì¡” Ì¡’” Ì ” Ì š” Ì¡” Ì¡” Ì®” Ì®” Ì®” Ì®” Ì®” Ì®”  Ì®”" Ì®’” Ì ” Ì –” Ì¡” Ì¡” Ì¯” Ì¯” Ì¯” Ì¯’” Ì ” Ì ˜” Ì¡” Ì¡” Ì°” Ì°” Ì°”( Ì°%”) Ì°&”/ Ì°,” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢”# Ì¢”$ Ì¢”% Ì¢ ”& Ì¢!”) Ì¢$”* Ì¢%”+ Ì¢&”, Ì¢'”/ Ì¢*–” Ì¢” Ì¢” Ì¢,” Ì¢4” Ì¢5” Ì¢7–” Ì¢” Ì¢” Ì¢9” Ì¢ÌB” Ì¢ÌC”! Ì¢ÌIÜ ” Ì¢” Ì¢” Ì£” Ì£” Ì£” Ì£” Ì£”! Ì£!”% Ì£%”& Ì£&”, Ì£,”/ Ì£/”0 Ì£0”4 Ì£4”5 Ì£5”; Ì£;”< Ì£;”= Ì£<”> Ì£=’” Ì¢” Ì¢”” Ì¤” Ì¤” Ì¤”" Ì¤–” Ì¤” Ì¤” Ì¤” Ì¤'” Ì¤(” Ì¤*–” Ì¤” Ì¤” Ì¤,” Ì¤5” Ì¤6”! Ì¤<Ü ” Ì¤” Ì¤” Ì¥” Ì¥” Ì¥” Ì¥” Ì¥”! Ì¥!”% Ì¥%”& Ì¥&”, Ì¥,”/ Ì¥/”0 Ì¥0”4 Ì¥4”5 Ì¥5”; Ì¥;”< Ì¥;”= Ì¥<”> Ì¥=’” Ì¤” Ì¤”” Ì¦” Ì¦” Ì¦” Ì¦–” Ì¦” Ì¦” Ì¦” Ì¦#” Ì¦$” Ì¦&–” Ì¦” Ì¦” Ì¦(” Ì¦1” Ì¦2”$ Ì¦;œ” Ì¦” Ì¦” Ì§” Ì§” Ì§” Ì§”" Ì§"”$ Ì§$”6 Ì§6”7 Ì§7”Ì@ Ì§Ì@”ÌB Ì§ÌBÜ ” Ì¦” Ì¦” Ì¨” Ì¨” Ì¨” Ì¨” Ì¨”! Ì¨!”% Ì¨%”& Ì¨&”5 Ì¨5”6 Ì¨6”? Ì¨?”Ì@ Ì¨Ì@”ÌA Ì¨Ì@”ÌB Ì¨ÌA”ÌC Ì¨ÌB’” Ì¦” Ì¦”” Ì©” Ì©” Ì©” Ì©–” Ì©” Ì©” Ì©” Ì©"” Ì©#” Ì©%–” Ì©” Ì©” Ì©'” Ì©0” Ì©1”! Ì©7’” Ì©” Ì©”” Ìª” Ìª” Ìª” Ìª–” Ìª” Ìª” Ìª” Ìª#” Ìª$” Ìª&–” Ìª” Ìª” Ìª(” Ìª1” Ìª2”$ Ìª;œ” Ìª” Ìª” Ì«” Ì«” Ì«” Ì«”" Ì«"”$ Ì«$”6 Ì«6”7 Ì«7”Ì@ Ì«Ì@”ÌB Ì«ÌBÜ ” Ìª” Ìª” Ì¬” Ì¬” Ì¬” Ì¬” Ì¬”! Ì¬!”% Ì¬%”& Ì¬&”5 Ì¬5”6 Ì¬6”= Ì¬=”> Ì¬>”? Ì¬>”Ì@ Ì¬?”ÌA Ì¬Ì@’” Ìª” Ìª’” Ì ” Ì ’” Ì¡” Ì¡’” Ì²” Ì²”” Ì³” Ì³” Ì³”  Ì³’” Ì²” Ì²–” Ì³” Ì³” Ì´” Ì´” Ì´” Ì´’” Ì²” Ì²–” Ì³” Ì³” Ì´” Ì´%” Ì´&”! Ì´,’” Ì²” Ì²” Ì³” Ì³” Ìµ” Ìµ” Ìµ” Ìµ” Ìµ” Ìµ”! Ìµ”# Ìµ!”) Ìµ'”+ Ìµ)”- Ìµ+”/ Ìµ-’” Ì²” Ì²œ” Ì³” Ì³” Ì¶” Ì¶” Ì¶” Ì¶” Ì¶” Ì¶”# Ì¶!”$ Ì¶"”- Ì¶+”/ Ì¶-’” Ì²” Ì²’” Ì³” Ì³’” Ìc
+” Ìc’” Ìb” Ìb’” Ìa” Ìa’” ÌÂ” ÌÂ˜” ÌÃ” ÌÃ
+” ÌÃ” ÌÃ”  ÌÃ”% ÌÃ”' ÌÃ!”) ÌÃ#’” ÌÄ” ÌÄ–” ÌÄ” ÌÄ” ÌÆ	”$ ÌÆ”% ÌÆ”+ ÌÆ–” ÌÄ” ÌÄ” ÌÆ”% ÌÆ”& ÌÆ”, ÌÆ$–” ÌÄ” ÌÄ” ÌÇ	”. ÌÇ”/ ÌÇ”: ÌÇ$Ü ” ÌÄ” ÌÄ” ÌÈ	”& ÌÈ”' ÌÈ”* ÌÈ”, ÌÈ”/ ÌÈ”3 ÌÈ”4 ÌÈ”? ÌÈ)”ÌB ÌÈ,”ÌD ÌÈ.”ÌE ÌÈ.”ÌF ÌÈ/”ÌG ÌÈ0’” ÌÄ” ÌÄ’” ÌÊ” ÌÊ–” ÌÊ” ÌÊ” Ìó	”$ Ìó”% Ìó”+ Ìó˜” ÌÊ” ÌÊ” Ìô	”- Ìô”. Ìô”7 Ìô!”8 Ìô"”> Ìô(’” ÌË
+” ÌË–” ÌË
+” ÌË” Ìí”$ Ìí”% Ìí”* Ìí–” ÌË
+” ÌË” Ìî”% Ìî”& Ìî”+ Ìî–” ÌË
+” ÌË” Ìï”& Ìï”' Ìï”) Ìï–” ÌË
+” ÌË” Ìğ”. Ìğ”/ Ìğ”5 Ìğ!–” ÌË
+” ÌË” Ìñ”+ Ìñ”, Ìñ”. Ìñ’” ÌÌ” ÌÌ–” ÌÌ” ÌÌ” ÌÒ”! ÌÒ”" ÌÒ”( ÌÒš” ÌÌ” ÌÌ” ÌÓ”" ÌÓ”# ÌÓ”% ÌÓ”+ ÌÓ”- ÌÓ”/ ÌÓ ”1 ÌÓ"Ü ” ÌÍ” ÌÍ”$ ÌÍ”( ÌÍ”) ÌÍ”4 ÌÍ#”9 ÌÍ(”ÌB ÌÍ1”ÌC ÌÍ2”ÌD ÌÍ3”ÌE ÌÍ4”ÌN ÌÍ=”ÌO ÌÍ>”ÌP ÌÍ?”ÌQ ÌÍÌ@”ÌZ ÌÍÌI–” ÌÍ” ÌÍ” ÌÎ”% ÌÎ”& ÌÎ”( ÌÎ˜” ÌÍ” ÌÍ” ÌÎ”' ÌÎ(”( ÌÎ)”2 ÌÎ3”3 ÌÎ4”7 ÌÎ8–” ÌÍ” ÌÍ” ÌÎ:”) ÌÎÌF”* ÌÎÌG”+ ÌÎÌH’” ÌÍ” ÌÍ”” ÌÏ” ÌÏ”$ ÌÏ”' ÌÏ–” ÌÏ” ÌÏ” ÌÏ”% ÌÏ ”& ÌÏ!”( ÌÏ#–” ÌÏ” ÌÏ” ÌÏ%”& ÌÏ.”' ÌÏ/”- ÌÏ5Ü ” ÌÏ” ÌÏ” ÌĞ”$ ÌĞ”% ÌĞ”( ÌĞ”* ÌĞ”- ÌĞ!”1 ÌĞ%”2 ÌĞ&”= ÌĞ1”Ì@ ÌĞ4”ÌB ÌĞ6”ÌC ÌĞ6”ÌD ÌĞ7”ÌE ÌĞ8’” ÌÏ” ÌÏ’” ÌÌ” ÌÌ’” ÌÕ” ÌÕ–” ÌÕ” ÌÕ” Ìê”+ Ìê”, Ìê”- Ìê˜” ÌÕ” ÌÕ” Ìë”( Ìë”) Ìë”1 Ìë”2 Ìë ”5 Ìë#’” ÌÖ” ÌÖ–” ÌÖ” ÌÖ” Ìç”$ Ìç”% Ìç”+ Ìçš” ÌÖ” ÌÖ” Ìè”& Ìè”' Ìè”) Ìè”/ Ìè”1 Ìè!”2 Ìè"”4 Ìè$˜” Ì×” Ì×”  Ì×”! Ì×”, Ì×$”1 Ì×)”: Ì×2”< Ì×4œ”ÌD ÌØ”ÌN ÌØ”ÌU ÌØ”ÌW ÌØ”Ì\ ÌØ$”Ì^ ÌØ&”Ìg ÌØ/”Ìi ÌØ1”Ìp ÌØ8”Ìr ÌØ:”Ìì ÌØÌ´”Ìî ÌØÌ¶””4 ÌØ”9 ÌØ$”; ÌØ&”ÌD ÌØ/””4 ÌØ1”; ÌØ8”= ÌØ:”Ì· ÌØÌ´˜”0 ÌØ”5 ÌØ$”7 ÌØ&”Ì@ ÌØ/”ÌB ÌØ1”ÌI ÌØ8”ÌK ÌØ:”ÌÅ ÌØÌ´œ”ÌD ÌÙ”ÌN ÌÙ”ÌU ÌÙ”ÌW ÌÙ”Ì\ ÌÙ$”Ì^ ÌÙ&”Ìg ÌÙ/”Ìi ÌÙ1”Ìp ÌÙ8”Ìr ÌÙ:”Ì³ ÌÙÌ{”Ìµ ÌÙÌ}””4 ÌÙ”9 ÌÙ$”; ÌÙ&”ÌD ÌÙ/””4 ÌÙ1”; ÌÙ8”= ÌÙ:”Ì~ ÌÙÌ{˜”0 ÌÙ”5 ÌÙ$”7 ÌÙ&”Ì@ ÌÙ/”ÌB ÌÙ1”ÌI ÌÙ8”ÌK ÌÙ:”ÌŒ ÌÙÌ{œ”ÌD ÌÚ”ÌN ÌÚ”ÌU ÌÚ”ÌW ÌÚ”Ì\ ÌÚ$”Ì^ ÌÚ&”Ìg ÌÚ/”Ìi ÌÚ1”Ìp ÌÚ8”Ìr ÌÚ:”Ìµ ÌÚÌ}”Ì· ÌÚÌ””4 ÌÚ”9 ÌÚ$”; ÌÚ&”ÌD ÌÚ/””4 ÌÚ1”; ÌÚ8”= ÌÚ:”Ì€ ÌÚÌ}˜”0 ÌÚ”5 ÌÚ$”7 ÌÚ&”Ì@ ÌÚ/”ÌB ÌÚ1”ÌI ÌÚ8”ÌK ÌÚ:”Ì ÌÚÌ}œ”ÌD ÌÛ”ÌN ÌÛ”ÌU ÌÛ”ÌW ÌÛ”Ì\ ÌÛ$”Ì^ ÌÛ&”Ìh ÌÛ0”Ìj ÌÛ2”Ìq ÌÛ9”Ìs ÌÛ;”Ì© ÌÛÌq”Ì« ÌÛÌs””4 ÌÛ”9 ÌÛ$”; ÌÛ&”ÌE ÌÛ0””4 ÌÛ2”; ÌÛ9”= ÌÛ;”Ìs ÌÛÌq˜”0 ÌÛ”5 ÌÛ$”7 ÌÛ&”ÌA ÌÛ0”ÌC ÌÛ2”ÌJ ÌÛ9”ÌL ÌÛ;”Ì‚ ÌÛÌqœ”ÌD ÌÜ”ÌN ÌÜ”ÌU ÌÜ”ÌW ÌÜ”Ì\ ÌÜ$”Ì^ ÌÜ&”Ìg ÌÜ/”Ìi ÌÜ1”Ìp ÌÜ8”Ìr ÌÜ:”Ì¶ ÌÜÌ~”Ì¸ ÌÜÌ€””4 ÌÜ”9 ÌÜ$”; ÌÜ&”ÌD ÌÜ/””4 ÌÜ1”; ÌÜ8”= ÌÜ:”Ì ÌÜÌ~˜”0 ÌÜ”5 ÌÜ$”7 ÌÜ&”Ì@ ÌÜ/”ÌB ÌÜ1”ÌI ÌÜ8”ÌK ÌÜ:”Ì ÌÜÌ~œ”ÌD Ìİ”ÌN Ìİ”ÌU Ìİ”ÌW Ìİ”Ì\ Ìİ$”Ì^ Ìİ&”Ìg Ìİ/”Ìi Ìİ1”Ìp Ìİ8”Ìr Ìİ:”Ì  ÌİÌh”Ì¢ ÌİÌj””4 Ìİ”9 Ìİ$”; Ìİ&”ÌD Ìİ/””4 Ìİ1”; Ìİ8”= Ìİ:”Ìk ÌİÌh˜”0 Ìİ”5 Ìİ$”7 Ìİ&”Ì@ Ìİ/”ÌB Ìİ1”ÌI Ìİ8”ÌK Ìİ:”Ìy ÌİÌh‘” ÌŞ‘” ÌŞœ”ÌD Ìß”ÌN Ìß”ÌU Ìß”ÌW Ìß”Ì\ Ìß$”Ì^ Ìß&”Ìg Ìß/”Ìi Ìß1”Ìp Ìß8”Ìr Ìß:”Ì  ÌßÌh”Ì¢ ÌßÌj””4 Ìß”9 Ìß$”; Ìß&”ÌD Ìß/””4 Ìß1”; Ìß8”= Ìß:”Ìk ÌßÌh˜”0 Ìß”5 Ìß$”7 Ìß&”Ì@ Ìß/”ÌB Ìß1”ÌI Ìß8”ÌK Ìß:”Ìy ÌßÌhœ”ÌD Ìà”ÌN Ìà”ÌU Ìà”ÌW Ìà”Ì\ Ìà$”Ì^ Ìà&”Ìg Ìà/”Ìi Ìà1”Ìp Ìà8”Ìr Ìà:”Ì· ÌàÌ”Ì¹ ÌàÌ””4 Ìà”9 Ìà$”; Ìà&”ÌD Ìà/””4 Ìà1”; Ìà8”= Ìà:”Ì‚ ÌàÌ˜”0 Ìà”5 Ìà$”7 Ìà&”Ì@ Ìà/”ÌB Ìà1”ÌI Ìà8”ÌK Ìà:”Ì ÌàÌœ”ÌD Ìá”ÌN Ìá”ÌU Ìá”ÌW Ìá”Ì\ Ìá$”Ì^ Ìá&”Ìg Ìá/”Ìi Ìá1”Ìp Ìá8”Ìr Ìá:”Ì¾ ÌáÌ†”ÌÀ ÌáÌˆ””4 Ìá”9 Ìá$”; Ìá&”ÌD Ìá/””4 Ìá1”; Ìá8”= Ìá:”Ì‰ ÌáÌ†˜”0 Ìá”5 Ìá$”7 Ìá&”Ì@ Ìá/”ÌB Ìá1”ÌI Ìá8”ÌK Ìá:”Ì— ÌáÌ†œ”ÌD Ìâ”ÌN Ìâ”ÌU Ìâ”ÌW Ìâ”Ì\ Ìâ$”Ì^ Ìâ&”Ìg Ìâ/”Ìi Ìâ1”Ìp Ìâ8”Ìr Ìâ:”Ì§ ÌâÌo”Ì© ÌâÌq””4 Ìâ”9 Ìâ$”; Ìâ&”ÌD Ìâ/””4 Ìâ1”; Ìâ8”= Ìâ:”Ìr ÌâÌo˜”0 Ìâ”5 Ìâ$”7 Ìâ&”Ì@ Ìâ/”ÌB Ìâ1”ÌI Ìâ8”ÌK Ìâ:”Ì€ ÌâÌoœ”ÌD Ìã”ÌN Ìã”ÌU Ìã”ÌW Ìã”Ì\ Ìã$”Ì^ Ìã&”Ìg Ìã/”Ìi Ìã1”Ìp Ìã8”Ìr Ìã:”Ì¡ ÌãÌi”Ì£ ÌãÌk””4 Ìã”9 Ìã$”; Ìã&”ÌD Ìã/””4 Ìã1”; Ìã8”= Ìã:”Ìl ÌãÌi˜”0 Ìã”5 Ìã$”7 Ìã&”Ì@ Ìã/”ÌB Ìã1”ÌI Ìã8”ÌK Ìã:”Ìz ÌãÌiœ”ÌD Ìä”ÌN Ìä”ÌU Ìä”ÌW Ìä”Ì\ Ìä$”Ì^ Ìä&”Ìg Ìä/”Ìi Ìä1”Ìp Ìä8”Ìr Ìä:”Ì” ÌäÌ\”Ì– ÌäÌ^””4 Ìä”9 Ìä$”; Ìä&”ÌD Ìä/””4 Ìä1”; Ìä8”= Ìä:”Ì_ ÌäÌ\˜”0 Ìä”5 Ìä$”7 Ìä&”Ì@ Ìä/”ÌB Ìä1”ÌI Ìä8”ÌK Ìä:”Ìm ÌäÌ\‘” Ìå’” ÌÖ” ÌÖ’” ÌÕ” ÌÕ’” ÌË
+” ÌË’” ÌÊ” ÌÊ‘” Ìõ‘” Ìõ’” Ì`” Ì`	‘” Ìù’” Ìş” Ìş‘” Ìı ‘” Ìú’” Ìÿ” Ìÿ’” Í ”! Í ’”" Ìÿ”' Ìÿ’”$ Í ”+ Í ’” Ìÿ” Ìÿ’” Ìÿ” Ìÿ’” Í ” Í ’” Í ” Í ‘” Í’” Í” Í
+–” Í” Í
+” Í” Í
+” Í” Í˜” Í” Í
+” Í” Í” Í”- Í”. Í ”3 Í%š” Í” Í
+” Í” Í” Í” Í”" Í”$ Í”& Í”( Í–” Í” Í
+” Í” Í” Í”" Í–” Í” Í
+” Í	” Í” Í” Í˜” Í” Í
+” Í	” Í” Í”& Í”' Í”- Í%–” Í” Í
+” Í	” Í” Í”! Í–” Í” Í
+” Í	” Í” Í” Íš” Í” Í
+” Í		” Í	” Í	” Í	”  Í	”" Í	”# Í	”% Í	’” Í” Í
+–” Í” Í
+” Í” Í” Í”$ Í–” Í” Í
+” Í	” Í” Í” Í–” Í” Í
+” Í	” Í” Í”! Í–” Í” Í
+” Í	” Í” Í” Í–” Í” Í
+” Í	” Í” Í” Í’” Í” Í
+’” Í” Í
+‘” ÍÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜg‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìğ ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ‘”  Ìø ‘”  Ìù ‘”  Ìú ‘”  Ìû ‘”  Ìü ‘”  Ìı ‘”  Ìş ‘”  Ìÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ‘”  ÍL ‘”  ÍM ‘”  ÍN ‘”  ÍO ‘”  ÍP ‘”  ÍQ ‘”  ÍR ‘”  ÍS ‘”  ÍT ‘”  ÍU ‘”  ÍV ‘”  ÍW ‘”  ÍX ‘”  ÍY ‘”  ÍZ ‘”  Í[ ‘”  Í\ ‘”  Í] ‘”  Í^ ‘”  Í_ ‘”  Í` ‘”  Ía ‘”  Íb ‘”  Íc ‘”  Íd ‘”  Íe ‘”  Íf ‘”  Íg ‘”  Íh ‘”  Íi ‘”  Íj ‘”  Ík ‘”  Íl ‘”  Ím ‘”  Ín ‘”  Ío ‘”  Íp ‘”  Íq ‘”  Ír ‘”  Ís ‘”  Ít ‘”  Íu ‘”  Ív ‘”  Íw ‘”  Íx ‘”  Íy ‘”  Íz ‘”  Í{ ‘”  Í| ‘”  Í} ‘”  Í~ ‘”  Í ‘”  Í€ ‘”  Í ‘”  Í‚ ‘”  Íƒ ‘”  Í„ ‘”  Í… ‘”  Í† ‘”  Í‡ ‘”  Íˆ ‘”  Í‰ ‘”  ÍŠ ‘”  Í‹ ‘”  ÍŒ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í‘ ‘”  Í’ ‘”  Í“ ‘”  Í” ‘”  Í• ‘”  Í– ‘”  Í— ‘”  Í˜ ‘”  Í™ ‘”  Íš ‘”  Í› ‘”  Íœ ‘”  Í ‘”  Í ‘”  ÍŸ ‘”  Í  ‘”  Í¡ ‘”  Í¢ ‘”  Í£ ‘”  Í¤ ‘”  Í¥ ‘”  Í¦ ‘”  Í§ ‘”  Í¨ ‘”  Í© ‘”  Íª ‘”  Í« ‘”  Í¬ ‘”  Í­ ‘”  Í® ‘”  Í¯ ‘”  Í° ‘”  Í± ‘”  Í² ‘”  Í³ ‘”  Í´ ‘”  Íµ ‘”  Í¶ ‘”  Í· ‘”  Í¸ ‘”  Í¹ ‘”  Íº ‘”  Í» ‘”  Í¼ ‘”  Í½ ‘”  Í¾ ‘”  Í¿ ‘”  ÍÀ ‘”  ÍÁ ‘”  ÍÂ ‘”  ÍÃ ‘”  ÍÄ ‘”  ÍÅ ‘”  ÍÆ ‘”  ÍÇ ‘”  ÍÈ ‘”  ÍÉ ‘”  ÍÊ ‘”  ÍË ‘”  ÍÌ ‘”  ÍÍ ‘”  ÍÎ ‘”  ÍÏ ‘”  ÍĞ ‘”  ÍÑ ‘”  ÍÒ ‘”  ÍÓ ‘”  ÍÔ ‘”  ÍÕ ‘”  ÍÖ ‘”  Í× ‘”  ÍØ ‘”  ÍÙ ‘”  ÍÚ ‘”  ÍÛ ‘”  ÍÜ ‘”  Íİ ‘”  ÍŞ ‘”  Íß ‘”  Íà ‘”  Íá ‘”  Íâ ‘”  Íã ‘”  Íä ‘”  Íå ‘”  Íæ ‘”  Íç ‘”  Íè ‘”  Íé ‘”  Íê ‘”  Íë ‘”  Íì ‘”  Íí ‘”  Íî ‘”  Íï ‘”  Íğ ‘”  Íñ ‘”  Íò ‘”  Íó ‘”  Íô ‘”  Íõ ‘”  Íö ‘”  Í÷ ‘”  Íø ‘”  Íù ‘”  Íú ‘”  Íû ‘”  Íü ‘”  Íı ‘”  Íş ‘”  Íÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ‘”  ÍL ‘”  ÍM ‘”  ÍN ‘”  ÍO ‘”  ÍP ‘”  ÍQ ‘”  ÍR ‘”  ÍS ‘”  ÍT ‘”  ÍU ‘”  ÍV ‘”  ÍW ‘”  ÍX ‘”  ÍY ‘”  ÍZ ‘”  Í[ ‘”  Í\ ‘”  Í] ‘”  Í^ ‘”  Í_ ‘”  Í` ‘”  Ía ‘”  Íb ‘”  Íc ‘”  Íd ‘”  Íe ‘”  Íf ‘”  Íg ‘”  Íh ‘”  Íi ‘”  Íj ‘”  Ík ‘”  Íl ‘”  Ím ‘”  Ín ‘”  Ío ‘”  Íp ‘”  Íq ‘”  Ír ‘”  Ís ‘”  Ít ‘”  Íu ‘”  Ív ‘”  Íw ‘”  Íx ‘”  Íy ‘”  Íz ‘”  Í{ ‘”  Í| ‘”  Í} ‘”  Í~ ‘”  Í ‘”  Í€ ‘”  Í ‘”  Í‚ ‘”  Íƒ ‘”  Í„ ‘”  Í… ‘”  Í† ‘”  Í‡ ‘”  Íˆ ‘”  Í‰ ‘”  ÍŠ ‘”  Í‹ ‘”  ÍŒ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í‘ ‘”  Í’ ‘”  Í“ ‘”  Í” ‘”  Í• ‘”  Í– ‘”  Í— ‘”  Í˜ ‘”  Í™ ‘”  Íš ‘”  Í› ‘”  Íœ ‘”  Í ‘”  Í ‘”  ÍŸ ‘”  Í  ‘”  Í¡ ‘”  Í¢ ‘”  Í£ ‘”  Í¤ ‘”  Í¥ ‘”  Í¦ ‘”  Í§ ‘”  Í¨ ‘”  Í© ‘”  Íª ‘”  Í« ‘”  Í¬ ‘”  Í­ ‘”  Í® ‘”  Í¯ ‘”  Í° ‘”  Í± ‘”  Í² ‘”  Í³ ‘”  Í´ ‘”  Íµ ‘”  Í¶ ‘”  Í· ‘”  Í¸ ‘”  Í¹ ‘”  Íº ‘”  Í» ‘”  Í¼ ‘”  Í½ ‘”  Í¾ ‘”  Í¿ ‘”  ÍÀ ‘”  ÍÁ ‘”  ÍÂ ‘”  ÍÃ ‘”  ÍÄ ‘”  ÍÅ ‘”  ÍÆ ‘”  ÍÇ ‘”  ÍÈ ‘”  ÍÉ ‘”  ÍÊ ‘”  ÍË ‘”  ÍÌ ‘”  ÍÍ ‘”  ÍÎ ‘”  ÍÏ ‘”  ÍĞ ‘”  ÍÑ ‘”  ÍÒ ‘”  ÍÓ ‘”  ÍÔ ‘”  ÍÕ ‘”  ÍÖ ‘”  Í× ‘”  ÍØ ‘”  ÍÙ ‘”  ÍÚ ‘”  ÍÛ ‘”  ÍÜ ‘”  Íİ ‘”  ÍŞ ‘”  Íß ‘”  Íà ‘”  Íá ‘”  Íâ ‘”  Íã ‘”  Íä ‘”  Íå ‘”  Íæ ‘”  Íç ‘”  Íè ‘”  Íé ‘”  Íê ‘”  Íë ‘”  Íì ‘”  Íí ‘”  Íî ‘”  Íï ‘”  Íğ ‘”  Íñ ‘”  Íò ‘”  Íó ‘”  Íô ‘”  Íõ ‘”  Íö ‘”  Í÷ ‘”  Íø ‘”  Íù ‘”  Íú ‘”  Íû ‘”  Íü ‘”  Íı ‘”  Íş ‘”  Íÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ‘”  ÍL ‘”  ÍM ‘”  ÍN ‘”  ÍO ‘”  ÍP ‘”  ÍQ ‘”  ÍR ‘”  ÍS ‘”  ÍT ‘”  ÍU ‘”  ÍV ‘”  ÍW ‘”  ÍX ‘”  ÍY ‘”  ÍZ ‘”  Í[ ‘”  Í\ ‘”  Í] ‘”  Í^ ‘”  Í_ ‘”  Í` ‘”  Ía ‘”  Íb ‘”  Íc ‘”  Íd ‘”  Íe ‘”  Íf ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache“ÔrK•¤type¥start£endªspecifiers¦source±ImportDeclarationÌÊÌÿ‘ÔrL•¤type¥start£end¨imported¥local¯ImportSpecifierÌÓÌŞÔrM”¤type¥start£end¤nameªIdentifierÌÓÌŞ«AuthServiceMªIdentifierÌÓÌŞ«AuthServiceÔrN•¤type¥start£end¥value£raw§LiteralÌæÌş¶../service/AuthService¸'../service/AuthService'K±ImportDeclarationÍÍ#‘ÔrO”¤type¥start£end¥local¶ImportDefaultSpecifierÍÍMªIdentifierÍÍ¦routerN§LiteralÍÍ"¬@ohos.router®'@ohos.router'K±ImportDeclarationÍ%ÍS‘O¶ImportDefaultSpecifierÍ,Í8MªIdentifierÍ,Í8¬promptActionN§LiteralÍ>ÍR²@ohos.promptAction´'@ohos.promptAction'

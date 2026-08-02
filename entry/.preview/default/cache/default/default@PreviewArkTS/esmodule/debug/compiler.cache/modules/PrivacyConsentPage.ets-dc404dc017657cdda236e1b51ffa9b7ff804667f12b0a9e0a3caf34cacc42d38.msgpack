@@ -1,0 +1,621 @@
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚEéif (!("finalizeConstruction" in ViewPU.prototype)) {
+    Reflect.set(ViewPU.prototype, "finalizeConstruction", () => { });
+}
+/**
+ * éšç§æ”¿ç­–åŒæ„é¡µé¢ â€” é¦–æ¬¡å¯åŠ¨æ—¶å¼¹å‡º
+ * ç”¨æˆ·å¿…é¡»åŒæ„æ‰èƒ½ä½¿ç”¨App
+ */
+import router from '@ohos.router';
+import preferences from "@ohos.data.preferences";
+const PREFS_NAME = 'quicktrade_settings';
+class PrivacyConsentPage extends ViewPU {
+    constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
+        super(parent, __localStorage, elmtId, extraInfo);
+        if (typeof paramsLambda === "function") {
+            this.paramsGenerator_ = paramsLambda;
+        }
+        this.__agreed = new ObservedPropertySimplePU(false, this, "agreed");
+        this.setInitiallyProvidedValue(params);
+        this.finalizeConstruction();
+    }
+    setInitiallyProvidedValue(params) {
+        if (params.agreed !== undefined) {
+            this.agreed = params.agreed;
+        }
+    }
+    updateStateVars(params) {
+    }
+    purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__agreed.purgeDependencyOnElmtId(rmElmtId);
+    }
+    aboutToBeDeleted() {
+        this.__agreed.aboutToBeDeleted();
+        SubscriberManager.Get().delete(this.id__());
+        this.aboutToBeDeletedInternal();
+    }
+    get agreed() {
+        return this.__agreed.get();
+    }
+    set agreed(newValue) {
+        this.__agreed.set(newValue);
+    }
+    async agree() {
+        // ä¿å­˜åŒæ„çŠ¶æ€
+        try {
+            const ctx = getContext(this);
+            const prefs = await preferences.getPreferences(ctx, PREFS_NAME);
+            await prefs.put('privacy_agreed', true);
+            await prefs.flush();
+        }
+        catch (e) {
+            console.error('Privacy prefs save error:', JSON.stringify(e));
+        }
+        // è·³è½¬åˆ°é¦–é¡µï¼ˆæ¸¸å®¢æ¨¡å¼ï¼‰
+        router.replaceUrl({ url: 'pages/Index' });
+    }
+    disagree() {
+        // é€€å‡ºåº”ç”¨
+        const ctx = getContext(this);
+        ctx.terminateSelf();
+    }
+    initialRender() {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(38:5)", "entry");
+            Column.width('100%');
+            Column.height('100%');
+            Column.backgroundColor('#f8f9fc');
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // é¡¶éƒ¨å›¾æ ‡åŒº
+            Column.create();
+            Column.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(40:7)", "entry");
+            // é¡¶éƒ¨å›¾æ ‡åŒº
+            Column.width('100%');
+            // é¡¶éƒ¨å›¾æ ‡åŒº
+            Column.padding({ top: 48, bottom: 32 });
+            // é¡¶éƒ¨å›¾æ ‡åŒº
+            Column.alignItems(HorizontalAlign.Center);
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('ðŸ“’');
+            Text.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(41:9)", "entry");
+            Text.fontSize(56);
+            Text.margin({ bottom: 12 });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('å¿«è®°äº¤æ˜“');
+            Text.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(45:9)", "entry");
+            Text.fontSize(22);
+            Text.fontWeight(FontWeight.Bold);
+            Text.fontColor('#1a1a2e');
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('AIè¯­éŸ³è®°è´¦ Â· ç®€å•é«˜æ•ˆ');
+            Text.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(50:9)", "entry");
+            Text.fontSize(14);
+            Text.fontColor('#888');
+            Text.margin({ top: 6 });
+        }, Text);
+        Text.pop();
+        // é¡¶éƒ¨å›¾æ ‡åŒº
+        Column.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // éšç§æ”¿ç­–å†…å®¹
+            Scroll.create();
+            Scroll.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(60:7)", "entry");
+            // éšç§æ”¿ç­–å†…å®¹
+            Scroll.layoutWeight(1);
+            // éšç§æ”¿ç­–å†…å®¹
+            Scroll.scrollBar(BarState.Off);
+        }, Scroll);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(61:9)", "entry");
+            Column.width('100%');
+            Column.padding({ left: 4, right: 4 });
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('éšç§æ”¿ç­–æ¦‚è¦');
+            Text.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(62:11)", "entry");
+            Text.fontSize(16);
+            Text.fontWeight(FontWeight.Medium);
+            Text.fontColor('#333');
+            Text.margin({ bottom: 16 });
+            Text.alignSelf(ItemAlign.Start);
+        }, Text);
+        Text.pop();
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new PrivacyItem(this, { icon: 'ðŸ“±', label: 'è´¦æˆ·ä¿¡æ¯', desc: 'æ‚¨æ³¨å†Œæ—¶æä¾›çš„ç”¨æˆ·åå’Œå¯†ç ï¼ˆåŠ å¯†å­˜å‚¨ï¼‰' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PrivacyConsentPage.ets", line: 69, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            icon: 'ðŸ“±',
+                            label: 'è´¦æˆ·ä¿¡æ¯',
+                            desc: 'æ‚¨æ³¨å†Œæ—¶æä¾›çš„ç”¨æˆ·åå’Œå¯†ç ï¼ˆåŠ å¯†å­˜å‚¨ï¼‰'
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        icon: 'ðŸ“±', label: 'è´¦æˆ·ä¿¡æ¯', desc: 'æ‚¨æ³¨å†Œæ—¶æä¾›çš„ç”¨æˆ·åå’Œå¯†ç ï¼ˆåŠ å¯†å­˜å‚¨ï¼‰'
+                    });
+                }
+            }, { name: "PrivacyItem" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new PrivacyItem(this, { icon: 'ðŸ’°', label: 'äº¤æ˜“è®°å½•', desc: 'æ‚¨å½•å…¥çš„æ”¶å…¥/æ”¯å‡ºé‡‘é¢ã€å“ç±»ã€å¤‡æ³¨ç­‰' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PrivacyConsentPage.ets", line: 70, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            icon: 'ðŸ’°',
+                            label: 'äº¤æ˜“è®°å½•',
+                            desc: 'æ‚¨å½•å…¥çš„æ”¶å…¥/æ”¯å‡ºé‡‘é¢ã€å“ç±»ã€å¤‡æ³¨ç­‰'
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        icon: 'ðŸ’°', label: 'äº¤æ˜“è®°å½•', desc: 'æ‚¨å½•å…¥çš„æ”¶å…¥/æ”¯å‡ºé‡‘é¢ã€å“ç±»ã€å¤‡æ³¨ç­‰'
+                    });
+                }
+            }, { name: "PrivacyItem" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new PrivacyItem(this, { icon: 'ðŸŽ¤', label: 'éº¦å…‹é£Žæƒé™', desc: 'ç”¨äºŽè¯­éŸ³è®°è´¦ï¼Œä»…åœ¨æ‚¨ä¸»åŠ¨è§¦å‘æ—¶ä½¿ç”¨' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PrivacyConsentPage.ets", line: 71, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            icon: 'ðŸŽ¤',
+                            label: 'éº¦å…‹é£Žæƒé™',
+                            desc: 'ç”¨äºŽè¯­éŸ³è®°è´¦ï¼Œä»…åœ¨æ‚¨ä¸»åŠ¨è§¦å‘æ—¶ä½¿ç”¨'
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        icon: 'ðŸŽ¤', label: 'éº¦å…‹é£Žæƒé™', desc: 'ç”¨äºŽè¯­éŸ³è®°è´¦ï¼Œä»…åœ¨æ‚¨ä¸»åŠ¨è§¦å‘æ—¶ä½¿ç”¨'
+                    });
+                }
+            }, { name: "PrivacyItem" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new PrivacyItem(this, { icon: 'ðŸŒ', label: 'ç½‘ç»œæƒé™', desc: 'ç”¨äºŽè°ƒç”¨AIæŽ¥å£è§£æžè¯­éŸ³å†…å®¹' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PrivacyConsentPage.ets", line: 72, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            icon: 'ðŸŒ',
+                            label: 'ç½‘ç»œæƒé™',
+                            desc: 'ç”¨äºŽè°ƒç”¨AIæŽ¥å£è§£æžè¯­éŸ³å†…å®¹'
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        icon: 'ðŸŒ', label: 'ç½‘ç»œæƒé™', desc: 'ç”¨äºŽè°ƒç”¨AIæŽ¥å£è§£æžè¯­éŸ³å†…å®¹'
+                    });
+                }
+            }, { name: "PrivacyItem" });
+        }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create();
+            Text.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(74:11)", "entry");
+            Text.height(16);
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('æ‚¨çš„æ‰€æœ‰æ•°æ®å‡å­˜å‚¨åœ¨è®¾å¤‡æœ¬åœ°ï¼Œä¸ä¼šè‡ªåŠ¨ä¸Šä¼ äº‘ç«¯ã€‚\næ‚¨å¯ä»¥åœ¨è®¾ç½®ä¸­éšæ—¶æ³¨é”€è´¦å·å¹¶åˆ é™¤å…¨éƒ¨æ•°æ®ã€‚');
+            Text.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(77:11)", "entry");
+            Text.fontSize(13);
+            Text.fontColor('#888');
+            Text.lineHeight(20);
+            Text.width('100%');
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create();
+            Text.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(83:11)", "entry");
+            Text.height(8);
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('æŸ¥çœ‹å®Œæ•´éšç§æ”¿ç­– â†’');
+            Text.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(86:11)", "entry");
+            Text.fontSize(13);
+            Text.fontColor('#2d6be0');
+            Text.decoration({ type: TextDecorationType.Underline });
+            Text.onClick(() => {
+                // æ‰“å¼€æµè§ˆå™¨æŸ¥çœ‹éšç§æ”¿ç­–
+                const ctx = getContext(this);
+                const want = {
+                    action: 'ohos.want.action.viewData',
+                    entities: ['entity.system.browsable'],
+                    uri: 'https://www.ct256.cn/privacy-quicktrade'
+                };
+                ctx.startAbility(want).catch((err) => {
+                    console.error('Open browser failed:', JSON.stringify(err));
+                });
+            });
+        }, Text);
+        Text.pop();
+        Column.pop();
+        // éšç§æ”¿ç­–å†…å®¹
+        Scroll.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // åº•éƒ¨æŒ‰é’®
+            Column.create();
+            Column.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(110:7)", "entry");
+            // åº•éƒ¨æŒ‰é’®
+            Column.width('100%');
+            // åº•éƒ¨æŒ‰é’®
+            Column.padding({ left: 28, right: 28, bottom: 36 });
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Button.createWithLabel('åŒæ„å¹¶ç»§ç»­');
+            Button.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(111:9)", "entry");
+            Button.width('100%');
+            Button.height(48);
+            Button.fontSize(16);
+            Button.fontWeight(FontWeight.Medium);
+            Button.backgroundColor('#2d6be0');
+            Button.fontColor('#fff');
+            Button.borderRadius(24);
+            Button.onClick(() => this.agree());
+        }, Button);
+        Button.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Button.createWithLabel('ä¸åŒæ„å¹¶é€€å‡º');
+            Button.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(121:9)", "entry");
+            Button.width('100%');
+            Button.height(48);
+            Button.fontSize(15);
+            Button.fontWeight(FontWeight.Normal);
+            Button.backgroundColor(Color.Transparent);
+            Button.fontColor('#999');
+            Button.margin({ top: 12 });
+            Button.onClick(() => this.disagree());
+        }, Button);
+        Button.pop();
+        // åº•éƒ¨æŒ‰é’®
+        Column.pop();
+        Column.pop();
+    }
+    rerender() {
+        this.updateDirtyElements();
+    }
+    static getEntryName() {
+        return "PrivacyConsentPage";
+    }
+}
+class PrivacyItem extends ViewPU {
+    constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
+        super(parent, __localStorage, elmtId, extraInfo);
+        if (typeof paramsLambda === "function") {
+            this.paramsGenerator_ = paramsLambda;
+        }
+        this.__icon = new SynchedPropertySimpleOneWayPU(params.icon, this, "icon");
+        this.__label = new SynchedPropertySimpleOneWayPU(params.label, this, "label");
+        this.__desc = new SynchedPropertySimpleOneWayPU(params.desc, this, "desc");
+        this.setInitiallyProvidedValue(params);
+        this.finalizeConstruction();
+    }
+    setInitiallyProvidedValue(params) {
+        if (params.icon === undefined) {
+            this.__icon.set('');
+        }
+        if (params.label === undefined) {
+            this.__label.set('');
+        }
+        if (params.desc === undefined) {
+            this.__desc.set('');
+        }
+    }
+    updateStateVars(params) {
+        this.__icon.reset(params.icon);
+        this.__label.reset(params.label);
+        this.__desc.reset(params.desc);
+    }
+    purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__icon.purgeDependencyOnElmtId(rmElmtId);
+        this.__label.purgeDependencyOnElmtId(rmElmtId);
+        this.__desc.purgeDependencyOnElmtId(rmElmtId);
+    }
+    aboutToBeDeleted() {
+        this.__icon.aboutToBeDeleted();
+        this.__label.aboutToBeDeleted();
+        this.__desc.aboutToBeDeleted();
+        SubscriberManager.Get().delete(this.id__());
+        this.aboutToBeDeletedInternal();
+    }
+    get icon() {
+        return this.__icon.get();
+    }
+    set icon(newValue) {
+        this.__icon.set(newValue);
+    }
+    get label() {
+        return this.__label.get();
+    }
+    set label(newValue) {
+        this.__label.set(newValue);
+    }
+    get desc() {
+        return this.__desc.get();
+    }
+    set desc(newValue) {
+        this.__desc.set(newValue);
+    }
+    initialRender() {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create();
+            Row.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(147:5)", "entry");
+            Row.width('100%');
+            Row.padding({ top: 12, bottom: 12 });
+            Row.alignItems(VerticalAlign.Top);
+        }, Row);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.icon);
+            Text.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(148:7)", "entry");
+            Text.fontSize(18);
+            Text.margin({ right: 10 });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(152:7)", "entry");
+            Column.alignItems(HorizontalAlign.Start);
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.label);
+            Text.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(153:9)", "entry");
+            Text.fontSize(14);
+            Text.fontWeight(FontWeight.Medium);
+            Text.fontColor('#333');
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.desc);
+            Text.debugLine("entry/src/main/ets/pages/PrivacyConsentPage.ets(157:9)", "entry");
+            Text.fontSize(12);
+            Text.fontColor('#999');
+            Text.margin({ top: 2 });
+        }, Text);
+        Text.pop();
+        Column.pop();
+        Row.pop();
+    }
+    rerender() {
+        this.updateDirtyElements();
+    }
+}
+registerNamedRoute(() => new PrivacyConsentPage(undefined, {}), "", { bundleName: "com.xiaolin.quicktrade", moduleName: "entry", pagePath: "pages/PrivacyConsentPage", pageFullPath: "entry/src/main/ets/pages/PrivacyConsentPage", integratedHsp: "false", moduleType: "followWithHap" });
+//# sourceMappingURL=PrivacyConsentPage.js.mapÂ’Ùf hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.router.d.tsÙp hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.data.preferences.d.tsÙ=D:\QuickTrade\entry\src\main\ets\pages\PrivacyConsentPage.etsÔrBšªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¥entryÃÂ³D:\QuickTrade\entry­D:\QuickTrade¥entry¥1.0.0Ô  ³D:\QuickTrade\entryÃÃÚ¶/**
+ * éšç§æ”¿ç­–åŒæ„é¡µé¢ â€” é¦–æ¬¡å¯åŠ¨æ—¶å¼¹å‡º
+ * ç”¨æˆ·å¿…é¡»åŒæ„æ‰èƒ½ä½¿ç”¨App
+ */
+import router from '@ohos.router'
+import { common, Want } from '@kit.AbilityKit'
+import { preferences } from '@kit.ArkData'
+
+const PREFS_NAME = 'quicktrade_settings'
+
+@Entry
+@Component
+struct PrivacyConsentPage {
+  @State agreed: boolean = false
+
+  async agree() {
+    // ä¿å­˜åŒæ„çŠ¶æ€
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext
+      const prefs = await preferences.getPreferences(ctx, PREFS_NAME)
+      await prefs.put('privacy_agreed', true)
+      await prefs.flush()
+    } catch (e) {
+      console.error('Privacy prefs save error:', JSON.stringify(e))
+    }
+
+    // è·³è½¬åˆ°é¦–é¡µï¼ˆæ¸¸å®¢æ¨¡å¼ï¼‰
+    router.replaceUrl({ url: 'pages/Index' })
+  }
+
+  disagree() {
+    // é€€å‡ºåº”ç”¨
+    const ctx = getContext(this) as common.UIAbilityContext
+    ctx.terminateSelf()
+  }
+
+  build() {
+    Column() {
+      // é¡¶éƒ¨å›¾æ ‡åŒº
+      Column() {
+        Text('ðŸ“’')
+          .fontSize(56)
+          .margin({ bottom: 12 })
+
+        Text('å¿«è®°äº¤æ˜“')
+          .fontSize(22)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#1a1a2e')
+
+        Text('AIè¯­éŸ³è®°è´¦ Â· ç®€å•é«˜æ•ˆ')
+          .fontSize(14)
+          .fontColor('#888')
+          .margin({ top: 6 })
+      }
+      .width('100%')
+      .padding({ top: 48, bottom: 32 })
+      .alignItems(HorizontalAlign.Center)
+
+      // éšç§æ”¿ç­–å†…å®¹
+      Scroll() {
+        Column() {
+          Text('éšç§æ”¿ç­–æ¦‚è¦')
+            .fontSize(16)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#333')
+            .margin({ bottom: 16 })
+            .alignSelf(ItemAlign.Start)
+
+          PrivacyItem({ icon: 'ðŸ“±', label: 'è´¦æˆ·ä¿¡æ¯', desc: 'æ‚¨æ³¨å†Œæ—¶æä¾›çš„ç”¨æˆ·åå’Œå¯†ç ï¼ˆåŠ å¯†å­˜å‚¨ï¼‰' })
+          PrivacyItem({ icon: 'ðŸ’°', label: 'äº¤æ˜“è®°å½•', desc: 'æ‚¨å½•å…¥çš„æ”¶å…¥/æ”¯å‡ºé‡‘é¢ã€å“ç±»ã€å¤‡æ³¨ç­‰' })
+          PrivacyItem({ icon: 'ðŸŽ¤', label: 'éº¦å…‹é£Žæƒé™', desc: 'ç”¨äºŽè¯­éŸ³è®°è´¦ï¼Œä»…åœ¨æ‚¨ä¸»åŠ¨è§¦å‘æ—¶ä½¿ç”¨' })
+          PrivacyItem({ icon: 'ðŸŒ', label: 'ç½‘ç»œæƒé™', desc: 'ç”¨äºŽè°ƒç”¨AIæŽ¥å£è§£æžè¯­éŸ³å†…å®¹' })
+
+          Text()
+            .height(16)
+
+          Text('æ‚¨çš„æ‰€æœ‰æ•°æ®å‡å­˜å‚¨åœ¨è®¾å¤‡æœ¬åœ°ï¼Œä¸ä¼šè‡ªåŠ¨ä¸Šä¼ äº‘ç«¯ã€‚\næ‚¨å¯ä»¥åœ¨è®¾ç½®ä¸­éšæ—¶æ³¨é”€è´¦å·å¹¶åˆ é™¤å…¨éƒ¨æ•°æ®ã€‚')
+            .fontSize(13)
+            .fontColor('#888')
+            .lineHeight(20)
+            .width('100%')
+
+          Text()
+            .height(8)
+
+          Text('æŸ¥çœ‹å®Œæ•´éšç§æ”¿ç­– â†’')
+            .fontSize(13)
+            .fontColor('#2d6be0')
+            .decoration({ type: TextDecorationType.Underline })
+            .onClick(() => {
+              // æ‰“å¼€æµè§ˆå™¨æŸ¥çœ‹éšç§æ”¿ç­–
+              const ctx = getContext(this) as common.UIAbilityContext
+              const want: Want = {
+                action: 'ohos.want.action.viewData',
+                entities: ['entity.system.browsable'],
+                uri: 'https://www.ct256.cn/privacy-quicktrade'
+              }
+              ctx.startAbility(want).catch((err: Error) => {
+                console.error('Open browser failed:', JSON.stringify(err))
+              })
+            })
+        }
+        .width('100%')
+        .padding({ left: 4, right: 4 })
+      }
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+
+      // åº•éƒ¨æŒ‰é’®
+      Column() {
+        Button('åŒæ„å¹¶ç»§ç»­')
+          .width('100%')
+          .height(48)
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor('#2d6be0')
+          .fontColor('#fff')
+          .borderRadius(24)
+          .onClick(() => this.agree())
+
+        Button('ä¸åŒæ„å¹¶é€€å‡º')
+          .width('100%')
+          .height(48)
+          .fontSize(15)
+          .fontWeight(FontWeight.Normal)
+          .backgroundColor(Color.Transparent)
+          .fontColor('#999')
+          .margin({ top: 12 })
+          .onClick(() => this.disagree())
+      }
+      .width('100%')
+      .padding({ left: 28, right: 28, bottom: 36 })
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#f8f9fc')
+  }
+}
+
+@Component
+struct PrivacyItem {
+  @Prop icon: string = ''
+  @Prop label: string = ''
+  @Prop desc: string = ''
+
+  build() {
+    Row() {
+      Text(this.icon)
+        .fontSize(18)
+        .margin({ right: 10 })
+
+      Column() {
+        Text(this.label)
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#333')
+        Text(this.desc)
+          .fontSize(12)
+          .fontColor('#999')
+          .margin({ top: 2 })
+      }
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .padding({ top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Top)
+  }
+}
+ÀÔrC’¬@ohos.router¶@ohos.data.preferencesÔrD—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÃÙf hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.router.d.tsAÃªoh-resolveÂDAÃÙp hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.data.preferences.d.tsAÃªoh-resolveÂ“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappingsµPrivacyConsentPage.js ‘¶PrivacyConsentPage.etsÜ‘”    ‘” –”   ” ” ” ”! !”" !–”   ” 	” ” ”0 *”1 *–”   ” ” ” ”( (”) (’” ” ‘” 
+ ’”5 ”:  ‘” (’” 	” ’” 	” ”” ”	 ”
+ ” ’” ” ’” ” ™” ” ” ” ”" ”# ”' !”( =”) =ž” ” ” ” ”  ”+ %”, &”: 4”; 5”> 8”Ì@ :”ÌJ ÌD”ÌK ÌE”ÌL ÌE›” ” ” ” ” ” ”, &”. (”2 ,”3 -”4 -—” ” ” ” ” ” ”  ‘”	 ”” ” ” ” Ÿ” ” ” ” ” ”5 /”7 1”; 5”< 6”ÌE ?”ÌF Ì@”ÌG ÌA”ÌH ÌB”ÌI ÌC”ÌJ ÌC‘”	 ’” ” œ” ” 
+” ” ” ” ” ”! ”. *”0 ,”1 -”2 -’” ” ’” ” 
+’” ” ™”  ”  
+”  ”  ”  ”  ”#  ”$  ;”%  ;–” !” !” !” !” !” !’” "” "‘” $’” %” %
+–” %” %
+” Ì…” Ì…
+” Ì…” Ì…–” %” %
+” Ì†” Ì†” Ì†”  Ì†–” %” %
+” Ì‡”" Ì‡”# Ì‡”, Ì‡’” &” &’” '” '’” &” &–” '” '” 6” 6” 6” 6’” &” &ž” '” '” 7” 7” 7” 7”  7”" 7”$ 7”& 7”, 7 ”. 7"”0 7$”2 7&’” &” &˜” '” '” 8” 8” 8”- 8!”. 8"”4 8(”” (” (” (” (–” (” (” )” )” )” )š” (” (” *” *” *” *”  *”" *”$ *”& * ’” (” (”” ,” ,” ,” ,–” ,” ,” -” -” -” -˜” ,” ,” .” .” .”& . ”' .!”+ .%–” ,” ,” /” /” /”$ /’” ,” ,”” 1” 1” 1”' 1–” 1” 1” 2” 2” 2” 2–” 1” 1” 3” 3” 3”! 3š” 1” 1” 4” 4” 4” 4” 4” 4”  4”" 4’” 1” 1’” &” &’” '” '’” :” :’” ;” ;’” :” :–” ;” ;” Ìi” Ìi”  Ìi”! Ìi’” :” :˜” ;” ;” Ìj” Ìj” Ìj”% Ìj”& Ìj”) Ìj’” <” <–” <” <” Ìf	” Ìf” Ìf” Ìfž” <” <” Ìg	” Ìg” Ìg” Ìg”! Ìg”# Ìg”$ Ìg”& Ìg”+ Ìg!”- Ìg#”. Ìg$”0 Ìg&”” =
+” =” =”  =–” =
+” =” >” >” >” >˜” =
+” =” ?” ?” ?”& ?"”' ?#”- ?)–” =
+” =” Ì@” Ì@” Ì@”! Ì@š” =
+” =” ÌA” ÌA” ÌA” ÌA”  ÌA”" ÌA”$ ÌA ”& ÌA"˜” =
+” =” ÌB” ÌB” ÌB”$ ÌB ”% ÌB!”* ÌB&’” =
+” =Ü ”, ÌD
+”7 ÌD”> ÌD”Ì@ ÌD”ÌD ÌD”ÌF ÌD”ÌJ ÌD"”ÌL ÌD$”ÌQ ÌD)”ÌS ÌD+”ÌY ÌD1”Ì[ ÌD3”Ì_ ÌD7”Ìa ÌD9”Ìv ÌDÌN”Ìx ÌDÌP”” ÌD”  ÌD”" ÌD”& ÌD"”” ÌD$”! ÌD)”# ÌD+”) ÌD1”” ÌD3”  ÌD7”" ÌD9”7 ÌDÌNœ” ÌD” ÌD” ÌD”" ÌD"”$ ÌD$”) ÌD)”+ ÌD+”1 ÌD1”3 ÌD3”7 ÌD7”9 ÌD9”ÌN ÌDÌNÜ ”, ÌE
+”7 ÌE”> ÌE”Ì@ ÌE”ÌD ÌE”ÌF ÌE”ÌJ ÌE"”ÌL ÌE$”ÌQ ÌE)”ÌS ÌE+”ÌY ÌE1”Ì[ ÌE3”Ì_ ÌE7”Ìa ÌE9”Ìu ÌEÌM”Ìw ÌEÌO”” ÌE”  ÌE”" ÌE”& ÌE"”” ÌE$”! ÌE)”# ÌE+”) ÌE1”” ÌE3”  ÌE7”" ÌE9”6 ÌEÌMœ” ÌE” ÌE” ÌE”" ÌE"”$ ÌE$”) ÌE)”+ ÌE+”1 ÌE1”3 ÌE3”7 ÌE7”9 ÌE9”ÌM ÌEÌMÜ ”, ÌF
+”7 ÌF”> ÌF”Ì@ ÌF”ÌD ÌF”ÌF ÌF”ÌJ ÌF"”ÌL ÌF$”ÌQ ÌF)”ÌS ÌF+”ÌZ ÌF2”Ì\ ÌF4”Ì` ÌF8”Ìb ÌF:”Ìu ÌFÌM”Ìw ÌFÌO”” ÌF”  ÌF”" ÌF”& ÌF"”” ÌF$”! ÌF)”# ÌF+”* ÌF2”” ÌF4”  ÌF8”" ÌF:”5 ÌFÌMœ” ÌF” ÌF” ÌF”" ÌF"”$ ÌF$”) ÌF)”+ ÌF+”2 ÌF2”4 ÌF4”8 ÌF8”: ÌF:”ÌM ÌFÌMÜ ”, ÌG
+”7 ÌG”> ÌG”Ì@ ÌG”ÌD ÌG”ÌF ÌG”ÌJ ÌG"”ÌL ÌG$”ÌQ ÌG)”ÌS ÌG+”ÌY ÌG1”Ì[ ÌG3”Ì_ ÌG7”Ìa ÌG9”Ìq ÌGÌI”Ìs ÌGÌK”” ÌG”  ÌG”" ÌG”& ÌG"”” ÌG$”! ÌG)”# ÌG+”) ÌG1”” ÌG3”  ÌG7”" ÌG9”2 ÌGÌIœ” ÌG” ÌG” ÌG”" ÌG"”$ ÌG$”) ÌG)”+ ÌG+”1 ÌG1”3 ÌG3”7 ÌG7”9 ÌG9”ÌI ÌGÌI’” ÌI
+” ÌI–” ÌI
+” ÌI” ÌJ” ÌJ” ÌJ” ÌJ’” ÌI
+” ÌI”” ÌL
+” ÌL” ÌL”ÌI ÌLÌ@–” ÌL
+” ÌL” ÌM” ÌM” ÌM” ÌM–” ÌL
+” ÌL” ÌN” ÌN” ÌN”! ÌN–” ÌL
+” ÌL” ÌO” ÌO” ÌO” ÌO–” ÌL
+” ÌL” ÌP” ÌP” ÌP” ÌP’” ÌL
+” ÌL’” ÌR
+” ÌR–” ÌR
+” ÌR” ÌS” ÌS” ÌS” ÌS’” ÌR
+” ÌR”” ÌU
+” ÌU” ÌU”$ ÌU–” ÌU
+” ÌU” ÌV” ÌV” ÌV” ÌV–” ÌU
+” ÌU” ÌW” ÌW” ÌW”$ ÌW œ” ÌU
+” ÌU” ÌX” ÌX” ÌX” ÌX”" ÌX”$ ÌX ”6 ÌX2”7 ÌX3”Ì@ ÌX<”ÌB ÌX>—” ÌU
+” ÌU” ÌY” ÌY” ÌY” ÌY” ÌY’” ÌZ” ÌZ™” Ì[” Ì[” Ì[” Ì[”& Ì[$”' Ì[%”+ Ì[)”, Ì[ÌE”- Ì[ÌE”” Ì\” Ì\” Ì\” Ì\!”” Ì]” Ì]” Ì]”7 Ì]3–” Ì^” Ì^” Ì^” Ì^”8 Ì^4”9 Ì^5”” Ì_” Ì_” Ì_”ÌB Ì_>’” Ì`” Ì`ž” Ìa” Ìa” Ìa”  Ìa”! Ìa”% Ìa#”& Ìa$”' Ìa%”, Ìa*”- Ìa+”. Ìa,”1 Ìa6”3 Ìa8”5 Ìa:Ÿ” Ìb” Ìb” Ìb”! Ìb”" Ìb”8 Ìb4”: Ìb6”> Ìb:”? Ìb;”ÌH ÌbÌD”ÌI ÌbÌE”ÌL ÌbÌH”ÌM ÌbÌI”ÌN ÌbÌJ”ÌO ÌbÌJ”” Ìc” Ìc” Ìc” Ìc’” Ìd” Ìd’” ÌU
+” ÌU’” <” <’” :” :’” ;” ;’” Ìl” Ìl’” Ìm” Ìm’” Ìl” Ìl–” Ìm” Ìm” Ì‚” Ì‚” Ì‚” Ì‚’” Ìl” ÌlÜ ” Ìm” Ìm” Ìƒ” Ìƒ” Ìƒ” Ìƒ”! Ìƒ”# Ìƒ”% Ìƒ”' Ìƒ”, Ìƒ ”. Ìƒ"”0 Ìƒ$”2 Ìƒ&”8 Ìƒ,”: Ìƒ.”< Ìƒ0”> Ìƒ2”” Ìn” Ìn”# Ìn”* Ìn–” Ìn” Ìn” Ìo” Ìo” Ìo” Ìo–” Ìn” Ìn” Ìp” Ìp” Ìp” Ìp–” Ìn” Ìn” Ìq” Ìq” Ìq” Ìq˜” Ìn” Ìn” Ìr” Ìr” Ìr”( Ìr ”) Ìr!”/ Ìr'–” Ìn” Ìn” Ìs”" Ìs”# Ìs”, Ìs$–” Ìn” Ìn” Ìt” Ìt” Ìt”# Ìt–” Ìn” Ìn” Ìu” Ìu”  Ìu”" Ìuœ” Ìn” Ìn” Ìv” Ìv” Ìv” Ìv”  Ìv”! Ìv”% Ìv”& Ìv”+ Ìv#”- Ìv%’” Ìn” Ìn”” Ìx” Ìx”# Ìx”+ Ìx–” Ìx” Ìx” Ìy” Ìy” Ìy” Ìy–” Ìx” Ìx” Ìz” Ìz” Ìz” Ìz–” Ìx” Ìx” Ì{” Ì{” Ì{” Ì{˜” Ìx” Ìx” Ì|” Ì|” Ì|”( Ì| ”) Ì|!”/ Ì|'˜” Ìx” Ìx” Ì}”" Ì}”# Ì}”( Ì} ”) Ì}!”4 Ì},–” Ìx” Ìx” Ì~” Ì~” Ì~”# Ì~š” Ìx” Ìx” Ì” Ì” Ì” Ì” Ì”! Ì”# Ì”% Ìœ” Ìx” Ìx” Ì€” Ì€” Ì€” Ì€”  Ì€”! Ì€”% Ì€”& Ì€”. Ì€&”0 Ì€(’” Ìx” Ìx’” Ìl” Ìl’” Ìm” Ìm’” %” %
+‘” Ìˆ’” ÌŒ” ÌŒ‘” Ì‹ ‘” Ì‰’” Ì” Ì’” ÌŽ” ÌŽ’” Ì” Ì’”! Ì”% Ì’”" ÌŽ”' ÌŽ’”! Ì”% Ì’” Ì” Ì’” Ì” Ì’” ÌŽ” ÌŽ’” ÌŽ” ÌŽ’” Ì” Ì’” Ì” Ì‘” Ì‘’” Ì’” Ì’–” Ì’” Ì’” Ì£” Ì£
+” Ì£” Ì£ž” Ì’” Ì’” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤”! Ì¤”# Ì¤”) Ì¤”+ Ì¤ ”- Ì¤"”/ Ì¤$˜” Ì’” Ì’” Ì¥” Ì¥” Ì¥”( Ì¥”) Ì¥”, Ì¥!–” Ì“” Ì“
+” Ì“” Ì“” Ì“”! Ì“–” Ì“” Ì“
+” Ì”	” Ì”” Ì”” Ì”š” Ì“” Ì“
+” Ì•	” Ì•” Ì•” Ì•” Ì•”! Ì•”# Ì•”% Ì•’” Ì“” Ì“
+’” Ì—” Ì—˜” Ì—” Ì—” Ì¡” Ì¡” Ì¡”- Ì¡!”. Ì¡"”3 Ì¡'–” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜”" Ì˜–” Ì˜” Ì˜” Ì™” Ì™” Ì™” Ì™˜” Ì˜” Ì˜” Ìš” Ìš” Ìš”& Ìš ”' Ìš!”- Ìš'–” Ì˜” Ì˜” Ì›” Ì›” Ì›”! Ì›’” Ì˜” Ì˜–” Ìœ” Ìœ” Ìœ” Ìœ” Ìœ”! Ìœ–” Ìœ” Ìœ” Ì” Ì” Ì” Ì–” Ìœ” Ìœ” Ìž” Ìž” Ìž”! Ìžš” Ìœ” Ìœ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ”  ÌŸ”" ÌŸ’” Ìœ” Ìœ’” Ì—” Ì—’” Ì’” Ì’‘” Ì¦ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ–‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  ÌŽ ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ìž ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌÐ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  ÌÝ ‘”  ÌÞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìð ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ‘”  Ìø ‘”  Ìù ‘”  Ìú ‘”  Ìû ‘”  Ìü ‘”  Ìý ‘”  Ìþ ‘”  Ìÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ‘”  ÍL ‘”  ÍM ‘”  ÍN ‘”  ÍO ‘”  ÍP ‘”  ÍQ ‘”  ÍR ‘”  ÍS ‘”  ÍT ‘”  ÍU ‘”  ÍV ‘”  ÍW ‘”  ÍX ‘”  ÍY ‘”  ÍZ ‘”  Í[ ‘”  Í\ ‘”  Í] ‘”  Í^ ‘”  Í_ ‘”  Í` ‘”  Ía ‘”  Íb ‘”  Íc ‘”  Íd ‘”  Íe ‘”  Íf ‘”  Íg ‘”  Íh ‘”  Íi ‘”  Íj ‘”  Ík ‘”  Íl ‘”  Ím ‘”  Ín ‘”  Ío ‘”  Íp ‘”  Íq ‘”  Ír ‘”  Ís ‘”  Ít ‘”  Íu ‘”  Ív ‘”  Íw ‘”  Íx ‘”  Íy ‘”  Íz ‘”  Í{ ‘”  Í| ‘”  Í} ‘”  Í~ ‘”  Í ‘”  Í€ ‘”  Í ‘”  Í‚ ‘”  Íƒ ‘”  Í„ ‘”  Í… ‘”  Í† ‘”  Í‡ ‘”  Íˆ ‘”  Í‰ ‘”  ÍŠ ‘”  Í‹ ‘”  ÍŒ ‘”  Í ‘”  ÍŽ ‘”  Í ‘”  Í ‘”  Í‘ ‘”  Í’ ‘”  Í“ ‘”  Í” ‘”  Í• ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache’ÔrI•¤type¥start£endªspecifiers¦source±ImportDeclarationÌ³ÌÕ‘ÔrJ”¤type¥start£end¥local¶ImportDefaultSpecifierÌºÌÀÔrK”¤type¥start£end¤nameªIdentifierÌºÌÀ¦routerÔrL•¤type¥start£end¥value£raw§LiteralÌÆÌÔ¬@ohos.router®'@ohos.router'I±ImportDeclarationÌ×Í‘J¶ImportDefaultSpecifierÌÞÌéKªIdentifierÌÞÌé«preferencesL§LiteralÌïÍ¶@ohos.data.preferences¸"@ohos.data.preferences"
