@@ -2,16 +2,16 @@
   "app": {
     "signingConfigs": [
       {
-        "name": "default",
+        "name": "debug",
         "type": "HarmonyOS",
         "material": {
           "storeFile": "D:/QuickTrade/quicktrade.p12",
-          "storePassword": "0000001B4AE1DE104CA88BE43690BCAB59B082404BCDEDCFBF3E0D3BDC7A35549E8BFF0BD067D8E21A5A08",
+          "storePassword": "0000001B6C3662DA2FDCE254391F1912CEC38DC057C38584CD622DD676FF653FFC33DC443325AAC3C8075D",
           "keyAlias": "quicktrade",
-          "keyPassword": "0000001B1C2029E9F681E3188A7CC68DC31D7800ED1F8853B946E7DD3B07DE7F50D015053A92C1F6EC00CE",
+          "keyPassword": "0000001B449DA40BD767E043D787CB96AB2A1032F2C413FD5005757963DBDA7C30EF7D1A9E4EC7C22ECB9D",
           "signAlg": "SHA256withECDSA",
-          "profile": "D:/QuickTrade/quicktrade-release.p7b",
-          "certpath": "D:/QuickTrade/quicktrade-release.cer"
+          "profile": "D:/QuickTrade/quicktrade3Release.p7b",
+          "certpath": "D:/QuickTrade/quicktrade3.cer"
         }
       },
       {
@@ -31,7 +31,7 @@
     "products": [
       {
         "name": "default",
-        "signingConfig": "default",
+        "signingConfig": "debug",
         "compatibleSdkVersion": "4.1.0(11)",
         "compileSdkVersion": "6.1.1(24)",
         "targetSdkVersion": "6.1.1(24)",

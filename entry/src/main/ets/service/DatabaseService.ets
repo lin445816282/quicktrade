@@ -54,6 +54,7 @@ const SQL_CREATE_CATEGORIES = `
 
 let storeInstance: relationalStore.RdbStore | null = null
 let appCtx: Context | null = null
+let initPromise: Promise<relationalStore.RdbStore> | null = null
 
 export function initDB(context: Context): void {
   appCtx = context
@@ -61,40 +62,52 @@ export function initDB(context: Context): void {
 
 export async function getStore(): Promise<relationalStore.RdbStore> {
   if (storeInstance) {
-    hilog.info(0x0000, 'QuickTrade', 'getStore: cached')
     return storeInstance
   }
-  hilog.info(0x0000, 'QuickTrade', `getStore: creating, appCtx=${appCtx ? 'ok' : 'NULL'}`)
-  storeInstance = await relationalStore.getRdbStore(appCtx!, STORE_CONFIG)
-  hilog.info(0x0000, 'QuickTrade', 'getStore: store created')
-  if (storeInstance) {
-    await storeInstance.executeSql(SQL_CREATE_USERS, [])
-    await storeInstance.executeSql(SQL_CREATE_TRANSACTIONS, [])
-    await storeInstance.executeSql(SQL_CREATE_CATEGORIES, [])
-    hilog.info(0x0000, 'QuickTrade', 'getStore: tables created')
-    // 种子默认系统品类（user_id=0）
-    await seedDefaultCategories(storeInstance)
-    // 迁移：旧数据库无 huawei_uid 列
-    try {
-      await storeInstance.executeSql('ALTER TABLE users ADD COLUMN huawei_uid TEXT')
-    } catch (_e) {
-      // 列已存在则忽略
-    }
+  // 并发锁：确保只初始化一次
+  if (initPromise) {
+    return await initPromise
   }
-  return storeInstance!
+  initPromise = (async (): Promise<relationalStore.RdbStore> => {
+    hilog.info(0x0000, 'QuickTrade', `getStore: creating, appCtx=${appCtx ? 'ok' : 'NULL'}`)
+    storeInstance = await relationalStore.getRdbStore(appCtx!, STORE_CONFIG)
+    hilog.info(0x0000, 'QuickTrade', 'getStore: store created')
+    if (storeInstance) {
+      await storeInstance.executeSql(SQL_CREATE_USERS, [])
+      await storeInstance.executeSql(SQL_CREATE_TRANSACTIONS, [])
+      await storeInstance.executeSql(SQL_CREATE_CATEGORIES, [])
+      // 添加 UNIQUE 约束，防止品类重复播种
+      try {
+        await storeInstance.executeSql(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_cat_uniq ON categories(name, type, user_id)')
+      } catch (_e) {
+        // 索引已存在或创建失败则忽略
+      }
+      // 清理已有的重复记录（保留每组最早的一条）
+      try {
+        await storeInstance.executeSql(
+          'DELETE FROM categories WHERE id NOT IN (SELECT MIN(id) FROM categories GROUP BY name, type, user_id)')
+      } catch (_e) {
+        // 忽略清理错误
+      }
+      hilog.info(0x0000, 'QuickTrade', 'getStore: tables created')
+      // 种子默认系统品类（user_id=0）
+      await seedDefaultCategories(storeInstance)
+      // 迁移：旧数据库无 huawei_uid 列
+      try {
+        await storeInstance.executeSql('ALTER TABLE users ADD COLUMN huawei_uid TEXT')
+      } catch (_e) {
+        // 列已存在则忽略
+      }
+    }
+    return storeInstance!
+  })()
+  return await initPromise
 }
 
-/** 种子默认品类 — 仅当 categories 表为空时 */
+/** 种子默认品类 — INSERT OR IGNORE 每次启动都执行，补齐缺失模板 */
 async function seedDefaultCategories(store: relationalStore.RdbStore): Promise<void> {
   try {
-    const check = await store.querySql('SELECT COUNT(*) as cnt FROM categories', [])
-    check.goToFirstRow()
-    if (check.getLong(check.getColumnIndex('cnt')) > 0) {
-      check.close()
-      return
-    }
-    check.close()
-
     const defaults: Array<Array<string | number>> = [
       ['餐饮', '🍜', 'expense', 1],
       ['交通', '🚗', 'expense', 2],
@@ -113,18 +126,42 @@ async function seedDefaultCategories(store: relationalStore.RdbStore): Promise<v
       ['其他', '📌', 'income', 99]
     ]
     for (let i = 0; i < defaults.length; i++) {
-      const vb: relationalStore.ValuesBucket = {
-        'name': defaults[i][0] as string,
-        'icon': defaults[i][1] as string,
-        'type': defaults[i][2] as string,
-        'sort_order': defaults[i][3] as number,
-        'user_id': 0
-      }
-      await store.insert('categories', vb)
+      // 使用 INSERT OR IGNORE + UNIQUE 索引防止重复播种
+      await store.executeSql(
+        'INSERT OR IGNORE INTO categories (name, icon, type, sort_order, user_id) VALUES (?, ?, ?, ?, ?)',
+        [defaults[i][0] as string, defaults[i][1] as string, defaults[i][2] as string, defaults[i][3] as number, 0]
+      )
     }
     hilog.info(0x0000, 'QuickTrade', `seedDefaultCategories: ${defaults.length} rows`)
   } catch (e) {
     hilog.error(0x0000, 'QuickTrade', `seedDefaultCategories failed: ${JSON.stringify(e)}`)
+  }
+}
+
+/** 从全局模板克隆品类到指定用户 — INSERT OR IGNORE 防重复 */
+async function cloneDefaultCategoriesForUser(store: relationalStore.RdbStore, userId: number): Promise<void> {
+  try {
+    const check = await store.querySql('SELECT COUNT(*) as cnt FROM categories WHERE user_id = ?', [userId])
+    check.goToFirstRow()
+    if (check.getLong(check.getColumnIndex('cnt')) > 0) {
+      check.close()
+      return
+    }
+    check.close()
+    const tmpl = await store.querySql('SELECT name, icon, type, sort_order FROM categories WHERE user_id = 0 ORDER BY sort_order ASC', [])
+    let count = 0
+    while (tmpl.goToNextRow()) {
+      await store.executeSql(
+        'INSERT OR IGNORE INTO categories (name, icon, type, sort_order, user_id) VALUES (?, ?, ?, ?, ?)',
+        [tmpl.getString(tmpl.getColumnIndex('name')), tmpl.getString(tmpl.getColumnIndex('icon')),
+         tmpl.getString(tmpl.getColumnIndex('type')), tmpl.getLong(tmpl.getColumnIndex('sort_order')), userId]
+      )
+      count++
+    }
+    tmpl.close()
+    hilog.info(0x0000, 'QuickTrade', `cloneDefaultCategoriesForUser: cloned ${count} categories for user ${userId}`)
+  } catch (e) {
+    hilog.error(0x0000, 'QuickTrade', `cloneDefaultCategoriesForUser failed: ${JSON.stringify(e)}`)
   }
 }
 
@@ -327,35 +364,28 @@ export class DatabaseService {
   static async getCategories(type?: TransactionType): Promise<Category[]> {
     const store = await getStore()
     const uid = AuthService.getCurrentUserId()
-    // 先查用户专属 + 全局种子，再内存去重：同名同type优先保留用户专属
-    let sql = 'SELECT * FROM categories WHERE (user_id = ? OR user_id = 0)'
+    let sql = 'SELECT * FROM categories WHERE user_id = ?'
     const params: (string | number)[] = [uid]
     if (type) {
       sql += ' AND type = ?'
       params.push(type as string)
     }
-    sql += ' ORDER BY user_id DESC, sort_order ASC'
+    sql += ' ORDER BY sort_order ASC'
     const resultSet = await store.querySql(sql, params)
-    const seen = new Set<string>()
     const list: Category[] = []
     while (resultSet.goToNextRow()) {
-      const name = resultSet.getString(resultSet.getColumnIndex('name'))
-      const catType = resultSet.getString(resultSet.getColumnIndex('type'))
-      const key = `${name}|${catType}`
-      if (seen.has(key)) continue  // 去重：已见过则跳过（user_id DESC 确保用户专属优先）
-      seen.add(key)
       list.push(buildCategory(
         resultSet.getLong(resultSet.getColumnIndex('id')),
-        name,
+        resultSet.getString(resultSet.getColumnIndex('name')),
         resultSet.getString(resultSet.getColumnIndex('icon')),
-        catType,
+        resultSet.getString(resultSet.getColumnIndex('type')),
         resultSet.getLong(resultSet.getColumnIndex('sort_order'))
       ))
     }
     resultSet.close()
-    // 兜底：空则种子
+    // 兜底：用户无品类则从全局模板克隆
     if (list.length === 0 && !type) {
-      await seedDefaultCategories(store)
+      await cloneDefaultCategoriesForUser(store, uid)
       return await DatabaseService.getCategories(type)
     }
     return list
@@ -384,14 +414,8 @@ export class DatabaseService {
   static async updateCategory(id: number, name: string, icon: string): Promise<number> {
     const store = await getStore()
     const uid = AuthService.getCurrentUserId()
-    const vb: relationalStore.ValuesBucket = {
-      'name': name,
-      'icon': icon
-    }
-    const predicates = new relationalStore.RdbPredicates('categories')
-    predicates.equalTo('id', id)
-    predicates.equalTo('user_id', uid)
-    return await store.update(vb, predicates)
+    await store.executeSql('UPDATE categories SET name = ?, icon = ? WHERE id = ? AND user_id = ?', [name, icon, id, uid])
+    return id
   }
 
   /** ---------- 辅助 ---------- */

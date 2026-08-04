@@ -49,7 +49,7 @@ struct PrivacyConsentPage {
 
         Text('AI语音记账 · 简单高效')
           .fontSize(14)
-          .fontColor('#888')
+          .fontColor('#666')
           .margin({ top: 6 })
       }
       .width('100%')
@@ -76,7 +76,7 @@ struct PrivacyConsentPage {
 
           Text('您的所有数据均存储在设备本地，不会自动上传云端。\n您可以在设置中随时注销账号并删除全部数据。')
             .fontSize(13)
-            .fontColor('#888')
+            .fontColor('#666')
             .lineHeight(20)
             .width('100%')
 
@@ -124,7 +124,7 @@ struct PrivacyConsentPage {
           .fontSize(15)
           .fontWeight(FontWeight.Normal)
           .backgroundColor(Color.Transparent)
-          .fontColor('#999')
+          .fontColor('#777')
           .margin({ top: 12 })
           .onClick(() => this.disagree())
       }
@@ -156,7 +156,7 @@ struct PrivacyItem {
           .fontColor('#333')
         Text(this.desc)
           .fontSize(12)
-          .fontColor('#999')
+          .fontColor('#777')
           .margin({ top: 2 })
       }
       .alignItems(HorizontalAlign.Start)

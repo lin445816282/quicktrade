@@ -70,7 +70,7 @@ export struct ConfirmCard {
       if (this.parseResult.raw_text) {
         Text(`"${this.parseResult.raw_text}"`)
           .fontSize(13)
-          .fontColor('#aaa')
+          .fontColor('#777')
           .fontStyle(FontStyle.Italic)
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -199,7 +199,7 @@ export struct ConfirmCard {
       Row() {
         Button('取消')
           .fontSize(15)
-          .fontColor('#999')
+          .fontColor('#777')
           .backgroundColor('#f0f0f0')
           .borderRadius(8)
           .height(44)

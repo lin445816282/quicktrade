@@ -74,7 +74,7 @@ export struct CategoryPicker {
 
   build() {
     Column() {
-      Text('选择品类').fontSize(14).fontColor('#999').padding({ left: 4, bottom: 8 })
+      Text('选择品类').fontSize(14).fontColor('#777').padding({ left: 4, bottom: 8 })
 
       if (this.type === TransactionType.EXPENSE) {
         Grid() {

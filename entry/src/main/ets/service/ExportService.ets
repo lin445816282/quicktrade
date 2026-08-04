@@ -7,6 +7,7 @@
  *   ③ 保留：文件列表在设置页，可重分享/删除/一键清空
  */
 import { DatabaseService } from './DatabaseService'
+import { AuthService } from './AuthService'
 import { Transaction } from '../model/Transaction'
 import fs from '@ohos.file.fs'
 import { common } from '@kit.AbilityKit'
@@ -29,21 +30,24 @@ export class ExportService {
     return ExportService.exportTransactions(txs, label, context)
   }
 
-  /** ① 通过 ShareKit 弹出系统分享面板（微信/WPS 等）。成功返回 true，失败返回 false */
+  /** ① 通过 ShareKit 弹出系统分享面板。成功返回 true */
   static async shareFile(filePath: string, context: common.UIAbilityContext): Promise<boolean> {
+    let controller: systemShare.ShareController | null = null
     try {
       const uri: string = fileUri.getUriFromPath(filePath)
       const data: systemShare.SharedData = new systemShare.SharedData({
         utd: 'general.comma-separated-values',
         uri: uri
       })
-      const controller: systemShare.ShareController = new systemShare.ShareController(data)
-      await controller.show(context, {})
-      // 用户完成分享后 resolve → 返回 true
+      controller = new systemShare.ShareController(data)
+      // 60s 超时防止分享面板挂起导致无法再次导出
+      await Promise.race([
+        controller.show(context, {}),
+        new Promise<void>((_resolve, reject) => setTimeout(() => reject(new Error('share timeout')), 60000))
+      ])
       return true
     } catch (err) {
-      const e = err as BusinessError
-      console.error('ShareKit failed:', e.code, e.message)
+      console.info('ShareKit skipped:', JSON.stringify(err))
       return false
     }
   }
@@ -61,9 +65,15 @@ export class ExportService {
     pasteboard.getSystemPasteboard().setData(data)
   }
 
+  /** 用户隔离的导出目录 */
+  private static getExportDir(context: common.UIAbilityContext): string {
+    const uid = AuthService.getCurrentUserId()
+    return `${context.filesDir}/export/${uid}`
+  }
+
   /** 列出导出目录下所有文件（按时间倒序） */
   static listFiles(context: common.UIAbilityContext): string[] {
-    const dir: string = context.filesDir + '/export'
+    const dir: string = ExportService.getExportDir(context)
     try {
       const names: string[] = fs.listFileSync(dir)
       names.sort((a: string, b: string) => b.localeCompare(a))
@@ -92,10 +102,10 @@ export class ExportService {
     }
 
     const now: Date = new Date()
-    const ts: string = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`
+    const ts: string = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`
     const fileName: string = `快记交易_${label}_${ts}.csv`
 
-    const dir: string = context.filesDir + '/export'
+    const dir: string = ExportService.getExportDir(context)
     try { fs.mkdirSync(dir, true) } catch (_e) {}
     const filePath: string = `${dir}/${fileName}`
 

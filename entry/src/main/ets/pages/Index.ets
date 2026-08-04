@@ -200,7 +200,7 @@ struct Index {
               .margin({ right: 6 })
             Text('退出').fontSize(13).fontColor('#e74c3c').onClick(() => this.logout())
           } else {
-            Text('👤 游客').fontSize(13).fontColor('#999').layoutWeight(1)
+            Text('👤 游客').fontSize(13).fontColor('#777').layoutWeight(1)
             Text('登录').fontSize(13).fontColor('#27ae60').fontWeight(FontWeight.Medium)
               .padding({ left: 12, right: 4, top: 4, bottom: 4 })
               .onClick(() => { this.openLogin() })
@@ -210,11 +210,11 @@ struct Index {
         .backgroundColor('#fff').border({ width: { bottom: 0.5 }, color: '#f0f0f0' })
 
         Row() {
-          Column() { Text('今日支出').fontSize(12).fontColor('#999')
+          Column() { Text('今日支出').fontSize(12).fontColor('#777')
             Text(NumberUtils.formatMoney(this.todayExpense)).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#e74c3c') }
-          Column() { Text('今日收入').fontSize(12).fontColor('#999')
+          Column() { Text('今日收入').fontSize(12).fontColor('#777')
             Text(NumberUtils.formatMoney(this.todayIncome)).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#27ae60') }
-          Column() { Text('今日净额').fontSize(12).fontColor('#999')
+          Column() { Text('今日净额').fontSize(12).fontColor('#777')
             Text(this.todayNet).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#333') }
         }
         .width('100%').justifyContent(FlexAlign.SpaceAround).padding({ top: 16, bottom: 16 })
@@ -225,15 +225,15 @@ struct Index {
         } else if (this.groups.length === 0) {
           Column() {
             Text('📝').fontSize(48).margin({ bottom: 12 })
-            Text('还没有记录').fontSize(16).fontColor('#999')
-            Text('点击下方 + 号开始记账').fontSize(14).fontColor('#ccc').margin({ top: 4 })
+            Text('还没有记录').fontSize(16).fontColor('#777')
+            Text('点击下方 + 号开始记账').fontSize(14).fontColor('#999').margin({ top: 4 })
           }.width('100%').margin({ top: 60 })
         } else {
           List() {
             ForEach(this.groups, (group: TransactionGroup) => {
               ListItem() {
                 Column() {
-                  Text(group.label).fontSize(13).fontColor('#999')
+                  Text(group.label).fontSize(13).fontColor('#777')
                     .padding({ left: 16, top: 12, bottom: 4 }).width('100%')
                   ForEach(group.items, (item: Transaction) => {
                     ListItem() { this.TransactionItem(item) }

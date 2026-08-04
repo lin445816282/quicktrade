@@ -13,7 +13,6 @@ class CatStat {
 }
 
 interface MonthInfo { year: number; month: number }
-interface DailyTotal { date: string; income: number; expense: number }
 
 const CAT_ICONS: Record<string, string> = {
   '餐饮': '🍜', '交通': '🚗', '购物': '🛍️', '日用品': '🧴',
@@ -40,7 +39,6 @@ const PRESETS: Preset[] = [
 struct StatsPage {
   @State totalIncome: number = 0
   @State totalExpense: number = 0
-  @State dayTotals: DailyTotal[] = []
   @State expenseCats: CatStat[] = []
   @State incomeCats: CatStat[] = []
   @State listTab: number = 0
@@ -51,19 +49,16 @@ struct StatsPage {
   @State endDate: Date = new Date()
   @State startLabel: string = ''
   @State endLabel: string = ''
-  @State activePreset: number = 0 // -1=自定义, 0=今天, 1=本周...
+  @State activePreset: number = 2 // -1=自定义, 0=今天, 1=本周, 2=本月, 3=本年, 4=全部
+  @State sortBy: string = 'default' // 'default' | 'asc' | 'desc'
 
-  private chartSettings: RenderingContextSettings = new RenderingContextSettings(true)
-  private chartCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.chartSettings)
+  private donutSettingsExp: RenderingContextSettings = new RenderingContextSettings(true)
+  private donutCtxExp: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.donutSettingsExp)
+  private donutSettingsInc: RenderingContextSettings = new RenderingContextSettings(true)
+  private donutCtxInc: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.donutSettingsInc)
 
   aboutToAppear(): void {
-    const now = new Date()
-    this.startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    this.endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    this.startLabel = this.fmtDate(this.startDate)
-    this.endLabel = this.fmtDate(this.endDate)
-    this.activePreset = 0
-    this.loadData()
+    this.applyPreset(2) // 默认本月
   }
 
   fmtDate(d: Date): string {
@@ -78,21 +73,30 @@ struct StatsPage {
   applyPreset(idx: number): void {
     this.activePreset = idx
     const now = new Date()
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     let start: Date
+    let end: Date
     if (PRESETS[idx].days === 0) {
+      // 今天
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
       start = new Date(end)
-    } else if (PRESETS[idx].days < 0) {
-      start = new Date(end)
-      start.setDate(start.getDate() + PRESETS[idx].days)
-      if (idx === 3) { // 本月
-        start = new Date(now.getFullYear(), now.getMonth(), 1)
-      }
-      if (idx === 4) { // 本年
-        start = new Date(now.getFullYear(), 0, 1)
-      }
-    } else { // 全部
+    } else if (idx === 1) {
+      // 本周：本周一 → 今天
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const dow = now.getDay()
+      const monOffset = dow === 0 ? -6 : 1 - dow
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + monOffset)
+    } else if (idx === 2) {
+      // 本月：本月1号 → 今天
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      start = new Date(now.getFullYear(), now.getMonth(), 1)
+    } else if (idx === 3) {
+      // 本年：1月1号 → 12月31号
+      start = new Date(now.getFullYear(), 0, 1)
+      end = new Date(now.getFullYear(), 11, 31)
+    } else {
+      // 全部：不限制时间
       start = new Date(2000, 0, 1)
+      end = new Date(2099, 11, 31)
     }
     this.startDate = start
     this.endDate = end
@@ -156,6 +160,15 @@ struct StatsPage {
   async loadData(): Promise<void> {
     this.loading = true
     try {
+      // 预加载品类排序，建立 name→sort_order 映射
+      const cats = await DatabaseService.getCategories()
+      const orderMap = new Map<string, number>()
+      for (let i = 0; i < cats.length; i++) {
+        const c = cats[i]
+        const key = `${c.name}|${c.type}` as string
+        if (!orderMap.has(key)) orderMap.set(key, c.sort_order as number)
+      }
+
       const start = this.getQueryStart()
       const end = this.getQueryEnd()
       const txs: Transaction[] = await DatabaseService.getByDateRange(start, end)
@@ -171,11 +184,11 @@ struct StatsPage {
         }
       }
       this.totalIncome = inc; this.totalExpense = exp
-      this.expenseCats = this.sortMap(expMap); this.incomeCats = this.sortMap(incMap)
-      const daily: DailyTotal[] = await DatabaseService.getDailyTotals(start, end)
-      this.dayTotals = daily
+      this.expenseCats = this.sortMap(expMap, orderMap, 'expense')
+      this.incomeCats = this.sortMap(incMap, orderMap, 'income')
+      if (this.sortBy !== 'default') this.applySort()
       this.loading = false
-      setTimeout((): void => { this.drawChart() }, 300)
+      setTimeout((): void => { this.drawDonutExp(); this.drawDonutInc() }, 400)
     } catch (e) {
       this.loading = false
     }
@@ -191,96 +204,94 @@ struct StatsPage {
     if (entry) entry.total += tx.amount
   }
 
-  sortMap(map: Map<string, CatStat>): CatStat[] {
+  sortMap(map: Map<string, CatStat>, orderMap: Map<string, number>, type: string): CatStat[] {
     const arr: CatStat[] = []
     map.forEach((v: CatStat): void => {
       const cs = new CatStat(); cs.category = v.category; cs.total = v.total; cs.icon = v.icon
       arr.push(cs)
     })
-    arr.sort((a: CatStat, b: CatStat): number => b.total - a.total)
+    // 按数据库 sort_order 排序，保持品类原有先后顺序
+    arr.sort((a: CatStat, b: CatStat): number => {
+      const oa = orderMap.get(`${a.category}|${type}`) ?? 999
+      const ob = orderMap.get(`${b.category}|${type}`) ?? 999
+      return oa - ob
+    })
     return arr
   }
 
-  /** ---- Canvas ---- */
-
-  drawChart(): void {
-    const ctx = this.chartCtx
-    const W = ctx.width
-    const H = 220
-    if (W <= 0 || this.dayTotals.length === 0) return
-    ctx.clearRect(0, 0, W, H)
-
-    const padL = 42; const padR = 14; const padT = 14; const padB = 26
-    const cw = W - padL - padR; const ch = H - padT - padB
-    const n = this.dayTotals.length
-    const step = Math.max(cw / n, 8)
-
-    let maxVal = 0
-    for (let i = 0; i < n; i++) maxVal = Math.max(maxVal, this.dayTotals[i].income, this.dayTotals[i].expense)
-    if (maxVal === 0) maxVal = 100
-    const yMax = Math.ceil(maxVal * 1.15)
-
-    ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.5
-    for (let v = 0; v <= yMax; v += Math.ceil(yMax / 4)) {
-      const y = padT + ch - (v / yMax) * ch
-      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke()
-      ctx.fillStyle = '#999'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right'
-      ctx.fillText(String(v), padL - 4, y + 3)
+  applySort() {
+    const fn = (a: CatStat, b: CatStat): number => {
+      if (this.sortBy === 'asc') return a.total - b.total
+      if (this.sortBy === 'desc') return b.total - a.total
+      return 0 // default: 保持 sortMap 已排序序
     }
-
-    ctx.fillStyle = '#999'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center'
-    const step6 = Math.max(Math.floor(n / 6), 1)
-    for (let i = 0; i < n; i++) {
-      if (i % step6 === 0 || i === n - 1) {
-        const x = padL + i * step
-        const lbl = this.dayTotals[i].date.length >= 10 ? this.dayTotals[i].date.slice(5) : this.dayTotals[i].date
-        ctx.fillText(lbl, x, H - 6)
-      }
-    }
-
-    this.paintLine(ctx, padL, padT, cw, ch, n, step, true, yMax)
-    this.paintLine(ctx, padL, padT, cw, ch, n, step, false, yMax)
+    this.expenseCats = [...this.expenseCats].sort(fn)
+    this.incomeCats = [...this.incomeCats].sort(fn)
   }
 
-  paintLine(ctx: CanvasRenderingContext2D, x0: number, y0: number,
-            cw: number, ch: number, n: number, step: number,
-            isIncome: boolean, yMax: number): void {
-    const color = isIncome ? '#27ae60' : '#e74c3c'
-    const fillA = isIncome ? 'rgba(39,174,96,0.10)' : 'rgba(231,76,60,0.10)'
-    ctx.beginPath(); ctx.moveTo(x0, y0 + ch)
-    let lastV = 0; let lastX = x0; let lastY = y0 + ch
-    for (let i = 0; i < n; i++) {
-      const v = isIncome ? this.dayTotals[i].income : this.dayTotals[i].expense
-      const x = x0 + i * step; const y = y0 + ch - (v / yMax) * ch
-      ctx.lineTo(x, y)
-      if (v > 0) { lastV = v; lastX = x; lastY = y }
-    }
-    ctx.lineTo(x0 + (n - 1) * step, y0 + ch); ctx.closePath()
-    ctx.fillStyle = fillA; ctx.fill()
+  private DONUT_COLORS: string[] = [
+    '#e74c3c', '#2980b9', '#27ae60', '#8e44ad', '#e67e22',
+    '#1abc9c', '#e91e63', '#f39c12', '#2c3e50', '#c0392b',
+    '#16a085', '#d35400', '#7f8c8d', '#3498db', '#f1c40f'
+  ]
 
-    ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.5
-    for (let i = 0; i < n; i++) {
-      const v = isIncome ? this.dayTotals[i].income : this.dayTotals[i].expense
-      const x = x0 + i * step; const y = y0 + ch - (v / yMax) * ch
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
-    }
-    ctx.stroke()
+  drawDonutExp(): void {
+    this.drawDonut(this.donutCtxExp, this.expenseCats, this.totalExpense, '#e74c3c')
+  }
 
-    ctx.fillStyle = color
-    for (let i = 0; i < n; i++) {
-      const v = isIncome ? this.dayTotals[i].income : this.dayTotals[i].expense
-      if (v > 0) {
-        const x = x0 + i * step; const y = y0 + ch - (v / yMax) * ch
-        ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill()
-      }
+  drawDonutInc(): void {
+    this.drawDonut(this.donutCtxInc, this.incomeCats, this.totalIncome, '#27ae60')
+  }
+
+  drawDonut(ctx: CanvasRenderingContext2D, cats: CatStat[], total: number, defaultColor: string): void {
+    const W = ctx.width
+    const H = 120
+    if (W <= 0) return
+    ctx.clearRect(0, 0, W, H)
+
+    if (cats.length === 0 || total <= 0) {
+      // 空状态：灰色空心圆
+      const cx = W / 2; const cy = H / 2; const r = 55
+      ctx.beginPath()
+      ctx.arc(cx, cy, r, 0, Math.PI * 2)
+      ctx.strokeStyle = '#e0e0e0'
+      ctx.lineWidth = 16
+      ctx.stroke()
+      ctx.fillStyle = '#999'
+      ctx.font = '13px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText('暂无', cx, cy + 4)
+      return
     }
 
-    if (lastV > 0) {
-      ctx.font = '15px sans-serif'
+    const cx = W / 2
+    const cy = H / 2
+    const outerR = 55
+    const innerR = 34
+    let startAngle = -Math.PI / 2
+    const totalAngle = Math.PI * 2
+
+    for (let i = 0; i < cats.length; i++) {
+      const slice = cats[i]
+      const sweep = (slice.total / total) * totalAngle
+      const color = i < this.DONUT_COLORS.length ? this.DONUT_COLORS[i] : defaultColor
+
+      ctx.beginPath()
+      ctx.arc(cx, cy, outerR, startAngle, startAngle + sweep)
+      ctx.arc(cx, cy, innerR, startAngle + sweep, startAngle, true)
+      ctx.closePath()
       ctx.fillStyle = color
-      ctx.textAlign = 'left'
-      ctx.fillText(isIncome ? '收入' : '支出', lastX + 8, lastY + 5)
+      ctx.fill()
+
+      startAngle += sweep
     }
+
+    // 中间文字
+    ctx.fillStyle = '#333'
+    ctx.font = 'bold 14px sans-serif'
+    ctx.textAlign = 'center'
+    const label = NumberUtils.formatMoney(total)
+    ctx.fillText(label, cx, cy + 5)
   }
 
   /** ---- UI ---- */
@@ -299,41 +310,38 @@ struct StatsPage {
 
       // 日期范围卡片
       Column() {
-        // 预设按钮
-        Scroll() {
-          Row() {
-            ForEach(PRESETS, (p: Preset, idx: number): void => {
-              Text(p.label).fontSize(12)
-                .fontColor(idx === this.activePreset ? '#fff' : '#666')
-                .padding({ left: 12, right: 12, top: 5, bottom: 5 })
-                .borderRadius(12)
-                .backgroundColor(idx === this.activePreset ? '#27ae60' : '#f0f0f0')
-                .margin({ right: 8 })
-                .onClick((): void => { this.applyPreset(idx) })
-            })
-          }
-          .padding({ left: 16, right: 16 })
+        // 预设按钮 — 居中
+        Row() {
+          ForEach(PRESETS, (p: Preset, idx: number): void => {
+            Text(p.label).fontSize(12)
+              .fontColor(idx === this.activePreset ? '#fff' : '#666')
+              .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+              .borderRadius(12)
+              .backgroundColor(idx === this.activePreset ? '#27ae60' : '#f0f0f0')
+              .margin({ left: idx === 0 ? 0 : 6, right: idx === PRESETS.length - 1 ? 0 : 6 })
+              .onClick((): void => { this.applyPreset(idx) })
+          })
         }
-        .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
-        .width('100%')
+        .width('100%').justifyContent(FlexAlign.Center)
+        .padding({ left: 16, right: 16, top: 6, bottom: 2 })
 
         // 日期范围选择行
         Row() {
           Text('📅').fontSize(14)
           Row() {
             Text(this.startLabel).fontSize(14).fontColor('#27ae60').fontWeight(FontWeight.Medium)
-            Text(' ▾').fontSize(10).fontColor('#999')
+            Text(' ▾').fontSize(10).fontColor('#777')
           }
           .padding({ left: 10, right: 10, top: 6, bottom: 6 })
           .border({ width: 1, color: '#e0e0e0', radius: 6 })
           .backgroundColor('#fff')
           .onClick((): void => { this.openStartPicker() })
 
-          Text('→').fontSize(14).fontColor('#999').margin({ left: 6, right: 6 })
+          Text('→').fontSize(14).fontColor('#777').margin({ left: 6, right: 6 })
 
           Row() {
             Text(this.endLabel).fontSize(14).fontColor('#e74c3c').fontWeight(FontWeight.Medium)
-            Text(' ▾').fontSize(10).fontColor('#999')
+            Text(' ▾').fontSize(10).fontColor('#777')
           }
           .padding({ left: 10, right: 10, top: 6, bottom: 6 })
           .border({ width: 1, color: '#e0e0e0', radius: 6 })
@@ -348,108 +356,163 @@ struct StatsPage {
       // 汇总卡片
       Row() {
         Column() {
-          Text('支出').fontSize(11).fontColor('#999')
+          Text('支出').fontSize(11).fontColor('#777')
           Text(NumberUtils.formatMoney(this.totalExpense))
             .fontSize(20).fontWeight(FontWeight.Bold).fontColor('#e74c3c').margin({ top: 2 })
         }.layoutWeight(1)
         Column() {
-          Text('收入').fontSize(11).fontColor('#999')
+          Text('收入').fontSize(11).fontColor('#777')
           Text(NumberUtils.formatMoney(this.totalIncome))
             .fontSize(20).fontWeight(FontWeight.Bold).fontColor('#27ae60').margin({ top: 2 })
         }.layoutWeight(1)
         Column() {
-          Text('结余').fontSize(11).fontColor('#999')
+          Text('结余').fontSize(11).fontColor('#777')
           Text(NumberUtils.formatMoney(this.totalIncome - this.totalExpense))
             .fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333').margin({ top: 2 })
         }.layoutWeight(1)
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 14, bottom: 14 }).backgroundColor('#fff')
+      .padding({ left: 16, right: 16, top: 8, bottom: 8 }).backgroundColor('#fff')
 
-      // 滚动区
-      Scroll() {
-        Column() {
-          // 每日趋势
+      // 品类占比卡片
+      Column() {
+        Text('📊 品类占比').fontSize(14).fontWeight(FontWeight.Medium).fontColor('#333')
+          .width('100%').padding({ left: 12, right: 12, top: 6, bottom: 2 })
+        Row() {
+          // 支出饼图
           Column() {
-            Text('📈 每日趋势').fontSize(15).fontWeight(FontWeight.Medium)
-              .width('100%').padding({ left: 12, right: 12, top: 10, bottom: 4 })
-
-            if (this.dayTotals.length === 0 && !this.loading) {
-              Text('暂无数据').fontSize(13).fontColor('#ccc')
-                .width('100%').textAlign(TextAlign.Center).padding({ top: 30, bottom: 30 })
+            Text('📉 支出').fontSize(12).fontColor('#e74c3c').fontWeight(FontWeight.Medium).padding({ bottom: 2 })
+            if (this.expenseCats.length === 0 || this.totalExpense <= 0) {
+              Column() {
+                Text('🍩').fontSize(28)
+                Text('暂无').fontSize(11).fontColor('#999')
+              }.width('100%').height(120).justifyContent(FlexAlign.Center)
             } else {
-              Canvas(this.chartCtx).width('100%').height(220)
-                .onReady((): void => { setTimeout((): void => { this.drawChart() }, 100) })
-            }
-          }
-          .width('100%').backgroundColor('#fff').borderRadius(10)
-          .margin({ left: 12, right: 12, top: 8 })
-
-          // 收支明细
-          Column() {
-            Row() {
-              Text('💸 收支明细').fontSize(15).fontWeight(FontWeight.Medium)
-              Blank()
-              Text('支出').fontSize(12)
-                .fontColor(this.listTab === 0 ? '#fff' : '#999')
-                .padding({ left: 10, right: 10, top: 3, bottom: 3 }).borderRadius(10)
-                .backgroundColor(this.listTab === 0 ? '#e74c3c' : '#f0f0f0')
-                .onClick((): void => { this.listTab = 0 })
-              Text('收入').fontSize(12)
-                .fontColor(this.listTab === 1 ? '#fff' : '#999')
-                .padding({ left: 10, right: 10, top: 3, bottom: 3 }).borderRadius(10)
-                .backgroundColor(this.listTab === 1 ? '#27ae60' : '#f0f0f0')
-                .margin({ left: 6 })
-                .onClick((): void => { this.listTab = 1 })
-            }
-            .width('100%').padding({ left: 12, right: 12, top: 10, bottom: 6 })
-
-            if (this.listTab === 0) {
-              if (this.expenseCats.length === 0) {
-                Text('暂无支出').fontSize(13).fontColor('#ccc')
-                  .width('100%').textAlign(TextAlign.Center).padding({ top: 20, bottom: 20 })
-              } else {
+              Canvas(this.donutCtxExp).width('100%').height(120).backgroundColor('#fff')
+                .onReady((): void => { setTimeout((): void => { this.drawDonutExp() }, 100) })
+              Flex({ wrap: FlexWrap.Wrap }) {
                 ForEach(this.expenseCats, (cs: CatStat, idx: number): void => {
                   Row() {
-                    Text(cs.icon).fontSize(16)
-                    Text(cs.category).fontSize(14).fontColor('#333').margin({ left: 8 })
-                    Blank()
-                    Text('-' + NumberUtils.formatMoney(cs.total))
-                      .fontSize(14).fontWeight(FontWeight.Medium).fontColor('#e74c3c')
-                  }
-                  .width('100%')
-                  .padding({ left: 16, right: 16, top: 9, bottom: 9 })
-                  .border({ width: { bottom: idx < this.expenseCats.length - 1 ? 0.5 : 0 }, color: '#f0f0f0' })
+                    Row() {}.width(8).height(8).borderRadius(4)
+                      .backgroundColor(idx < this.DONUT_COLORS.length ? this.DONUT_COLORS[idx] : '#e74c3c')
+                    Text(cs.icon).fontSize(9).margin({ left: 2 })
+                    Text(cs.category).fontSize(9).fontColor('#666')
+                  }.margin({ right: 6, bottom: 3 }).width('22%')
                 })
-              }
+              }.width('100%').padding({ left: 2 })
+            }
+          }.layoutWeight(1).padding({ right: 4 })
+
+          // 收入饼图
+          Column() {
+            Text('📈 收入').fontSize(12).fontColor('#27ae60').fontWeight(FontWeight.Medium).padding({ bottom: 2 })
+            if (this.incomeCats.length === 0 || this.totalIncome <= 0) {
+              Column() {
+                Text('🍩').fontSize(28)
+                Text('暂无').fontSize(11).fontColor('#999')
+              }.width('100%').height(120).justifyContent(FlexAlign.Center)
             } else {
-              if (this.incomeCats.length === 0) {
-                Text('暂无收入').fontSize(13).fontColor('#ccc')
-                  .width('100%').textAlign(TextAlign.Center).padding({ top: 20, bottom: 20 })
-              } else {
+              Canvas(this.donutCtxInc).width('100%').height(120).backgroundColor('#fff')
+                .onReady((): void => { setTimeout((): void => { this.drawDonutInc() }, 100) })
+              Flex({ wrap: FlexWrap.Wrap }) {
                 ForEach(this.incomeCats, (cs: CatStat, idx: number): void => {
                   Row() {
-                    Text(cs.icon).fontSize(16)
-                    Text(cs.category).fontSize(14).fontColor('#333').margin({ left: 8 })
-                    Blank()
-                    Text('+' + NumberUtils.formatMoney(cs.total))
-                      .fontSize(14).fontWeight(FontWeight.Medium).fontColor('#27ae60')
-                  }
-                  .width('100%')
-                  .padding({ left: 16, right: 16, top: 9, bottom: 9 })
-                  .border({ width: { bottom: idx < this.incomeCats.length - 1 ? 0.5 : 0 }, color: '#f0f0f0' })
+                    Row() {}.width(8).height(8).borderRadius(4)
+                      .backgroundColor(idx < this.DONUT_COLORS.length ? this.DONUT_COLORS[idx] : '#27ae60')
+                    Text(cs.icon).fontSize(9).margin({ left: 2 })
+                    Text(cs.category).fontSize(9).fontColor('#666')
+                  }.margin({ right: 6, bottom: 3 }).width('22%')
                 })
-              }
+              }.width('100%').padding({ left: 2 })
             }
-            Row().height(20)
-          }
-          .width('100%').backgroundColor('#fff').borderRadius(10)
-          .margin({ left: 12, right: 12, top: 8, bottom: 16 })
-        }
-        .width('100%')
+          }.layoutWeight(1).padding({ left: 4 })
+        }.width('100%').padding({ left: 8, right: 8, bottom: 4 })
       }
-      .layoutWeight(1).scrollBar(BarState.Off).edgeEffect(EdgeEffect.None)
+      .width('100%').backgroundColor('#fff').borderRadius(10)
+      .margin({ left: 12, right: 12, top: 6 })
+
+      // 收支明细
+      Column() {
+        Row() {
+          Text('💸 收支明细').fontSize(14).fontWeight(FontWeight.Medium)
+          Text('↑').fontSize(13).fontColor(this.sortBy === 'asc' ? '#27ae60' : '#999')
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 }).borderRadius(4)
+            .backgroundColor(this.sortBy === 'asc' ? '#e8f5e9' : '#f5f5f5')
+            .margin({ left: 8 })
+            .onClick((): void => {
+              this.sortBy = this.sortBy === 'asc' ? 'default' : 'asc'
+              if (this.sortBy === 'default') { this.loadData() } else { this.applySort() }
+            })
+          Text('↓').fontSize(13).fontColor(this.sortBy === 'desc' ? '#e74c3c' : '#999')
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 }).borderRadius(4)
+            .backgroundColor(this.sortBy === 'desc' ? '#fde8e8' : '#f5f5f5')
+            .margin({ left: 2 })
+            .onClick((): void => {
+              this.sortBy = this.sortBy === 'desc' ? 'default' : 'desc'
+              if (this.sortBy === 'default') { this.loadData() } else { this.applySort() }
+            })
+          Blank()
+          Text('支出').fontSize(12)
+            .fontColor(this.listTab === 0 ? '#fff' : '#666')
+            .padding({ left: 10, right: 10, top: 3, bottom: 3 }).borderRadius(10)
+            .backgroundColor(this.listTab === 0 ? '#e74c3c' : '#f0f0f0')
+            .onClick((): void => { this.listTab = 0 })
+          Text('收入').fontSize(12)
+            .fontColor(this.listTab === 1 ? '#fff' : '#666')
+            .padding({ left: 10, right: 10, top: 3, bottom: 3 }).borderRadius(10)
+            .backgroundColor(this.listTab === 1 ? '#27ae60' : '#f0f0f0')
+            .margin({ left: 6 })
+            .onClick((): void => { this.listTab = 1 })
+        }
+        .width('100%').padding({ left: 12, right: 12, top: 8, bottom: 4 })
+
+        Scroll() {
+        Column() {
+        if (this.listTab === 0) {
+          if (this.expenseCats.length === 0) {
+            Text('暂无支出').fontSize(13).fontColor('#999')
+              .width('100%').textAlign(TextAlign.Center).padding({ top: 20, bottom: 20 })
+          } else {
+            ForEach(this.expenseCats, (cs: CatStat, idx: number): void => {
+              Row() {
+                Text(cs.icon).fontSize(16)
+                Text(cs.category).fontSize(14).fontColor('#333').margin({ left: 8 })
+                Blank()
+                Text('-' + NumberUtils.formatMoney(cs.total))
+                  .fontSize(14).fontWeight(FontWeight.Medium).fontColor('#e74c3c')
+              }
+              .width('100%')
+              .padding({ left: 16, right: 16, top: 9, bottom: 9 })
+              .border({ width: { bottom: idx < this.expenseCats.length - 1 ? 0.5 : 0 }, color: '#f0f0f0' })
+            })
+          }
+        } else {
+          if (this.incomeCats.length === 0) {
+            Text('暂无收入').fontSize(13).fontColor('#999')
+              .width('100%').textAlign(TextAlign.Center).padding({ top: 20, bottom: 20 })
+          } else {
+            ForEach(this.incomeCats, (cs: CatStat, idx: number): void => {
+              Row() {
+                Text(cs.icon).fontSize(16)
+                Text(cs.category).fontSize(14).fontColor('#333').margin({ left: 8 })
+                Blank()
+                Text('+' + NumberUtils.formatMoney(cs.total))
+                  .fontSize(14).fontWeight(FontWeight.Medium).fontColor('#27ae60')
+              }
+              .width('100%')
+              .padding({ left: 16, right: 16, top: 9, bottom: 9 })
+              .border({ width: { bottom: idx < this.incomeCats.length - 1 ? 0.5 : 0 }, color: '#f0f0f0' })
+            })
+          }
+        }
+        Row().height(20)
+        }.width('100%')
+        }.layoutWeight(1).scrollBar(BarState.Off).edgeEffect(EdgeEffect.None).align(Alignment.Top)
+      }
+      .width('100%').backgroundColor('#fff').borderRadius(10)
+      .margin({ left: 12, right: 12, top: 4, bottom: 16 })
+      .layoutWeight(1)
     }
-    .width('100%').height('100%').backgroundColor('#f5f5f5')
+    .width('100%').height('100%').backgroundColor('#fff')
   }
 }

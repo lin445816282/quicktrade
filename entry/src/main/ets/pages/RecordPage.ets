@@ -166,7 +166,7 @@ struct RecordPage {
             Text('📅 日期').fontSize(14).fontColor('#666')
             Blank()
             Text(this.dateLabel).fontSize(14).fontColor('#333')
-            Text(' ▸').fontSize(14).fontColor('#ccc')
+            Text(' ▸').fontSize(14).fontColor('#aaa')
           }
           .width('100%')
           .height(44)

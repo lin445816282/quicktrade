@@ -3,6 +3,7 @@
  */
 import { DatabaseService } from '../service/DatabaseService'
 import { ExportService } from '../service/ExportService'
+import { AuthService } from '../service/AuthService'
 import { Category } from '../model/Category'
 import { TransactionType } from '../model/Transaction'
 import router from '@ohos.router'
@@ -33,6 +34,7 @@ struct SettingsPage {
   @State exporting: boolean = false
   @State expenseExpanded: boolean = false
   @State incomeExpanded: boolean = false
+  @State isLoggedIn: boolean = false
   @State showAddIconPicker: boolean = false
   @State showEditIconPicker: boolean = false
   @State newName: string = ''
@@ -46,19 +48,21 @@ struct SettingsPage {
 
   async loadData() {
     this.loading = true
+    this.isLoggedIn = AuthService.isLoggedIn()
     try {
       this.categories = await DatabaseService.getCategories()
       this.buildGroups()
       const ctx = getContext(this) as common.UIAbilityContext
       const files = ExportService.listFiles(ctx)
-      this.exportFiles = []
+      const newFiles: ExportFile[] = []
       for (let i = 0; i < files.length; i++) {
         const p: string = files[i]
         const idx: number = p.lastIndexOf('/')
         const ef: ExportFile = new ExportFile()
         ef.path = p; ef.name = idx >= 0 ? p.slice(idx + 1) : p
-        this.exportFiles.push(ef)
+        newFiles.push(ef)
       }
+      this.exportFiles = newFiles
     } catch (e) { console.error('SettingsPage loadData:', JSON.stringify(e)) }
     this.loading = false
   }
@@ -88,7 +92,31 @@ struct SettingsPage {
   async saveEdit() {
     if (!this.editingCategory) return
     if (!this.editName.trim()) { promptAction.showToast({ message: '请输入类别名称', duration: 1500 }); return }
-    try { await DatabaseService.updateCategory(this.editingCategory.id, this.editName.trim(), this.editIcon || '💰'); promptAction.showToast({ message: '修改成功', duration: 1500 }); this.showEditDialog = false; this.loadData() }
+    try {
+      await DatabaseService.updateCategory(this.editingCategory.id, this.editName.trim(), this.editIcon || '💰')
+      // 本地更新
+      this.categories = this.categories.map(c => {
+        if (c.id === this.editingCategory!.id) {
+          const u = new Category()
+          u.id = c.id; u.name = this.editName.trim(); u.icon = this.editIcon || '💰'
+          u.type = c.type; u.sort_order = c.sort_order
+          return u
+        }
+        return c
+      })
+      this.buildGroups()
+      // ArkUI ForEach 同 key 不刷新 — 折叠再展开强制重绘
+      const isExpense = this.editingCategory!.type === TransactionType.EXPENSE || String(this.editingCategory!.type) === 'expense'
+      if (isExpense) {
+        this.expenseExpanded = false
+        setTimeout(() => { this.expenseExpanded = true }, 50)
+      } else {
+        this.incomeExpanded = false
+        setTimeout(() => { this.incomeExpanded = true }, 50)
+      }
+      promptAction.showToast({ message: '修改成功', duration: 1500 })
+      this.showEditDialog = false
+    }
     catch (e) { promptAction.showToast({ message: '修改失败', duration: 1500 }) }
   }
 
@@ -99,14 +127,16 @@ struct SettingsPage {
   }
 
   async exportAndShare() {
+    if (this.exporting) { promptAction.showToast({ message: '正在导出，请稍候', duration: 1000 }); return }
     this.exporting = true
     try {
       const ctx = getContext(this) as common.UIAbilityContext
       const path = await ExportService.exportAll(ctx)
+      promptAction.showToast({ message: '导出成功', duration: 1500 })
+      // 导出后立即分享
       const shared = await ExportService.shareFile(path, ctx)
-      if (shared) { promptAction.showToast({ message: '已分享', duration: 1500 }) }
-      else { await ExportService.copyToClipboard(path); promptAction.showToast({ message: '已导出并复制到剪贴板', duration: 2000 }) }
-      this.loadData()
+      if (!shared) { await ExportService.copyToClipboard(path) }
+      await this.loadData()
     } catch (e) { promptAction.showToast({ message: '导出失败', duration: 1500 }) }
     finally { this.exporting = false }
   }
@@ -151,6 +181,7 @@ struct SettingsPage {
           Text('  ').fontSize(18)
         }.width('100%').height(48).padding({ left: 16, right: 16 }).backgroundColor('#fff')
 
+        Scroll() {
         Column() {
           // === 支出品类 ===
           Column() {
@@ -163,7 +194,7 @@ struct SettingsPage {
                 .backgroundColor('#27ae60').fontColor('#fff').borderRadius(4)
                 .onClick(() => { this.newType = TransactionType.EXPENSE; this.newName = ''; this.newIcon = '💰'; this.showAddIconPicker = false; this.showAddDialog = true })
             }.width('100%').padding({ left: 16, right: 16, top: 10, bottom: this.expenseExpanded ? 4 : 10 })
-            if (this.expenseExpanded) {
+            if (this.expenseExpanded && this.grouped.length > 0) {
               ForEach(this.grouped[0].items, (cat: Category) => {
                 Row() {
                   Text(cat.icon).fontSize(18)
@@ -171,7 +202,7 @@ struct SettingsPage {
                   Button('✏️ 编辑').fontSize(10).height(26).padding({ left: 6, right: 6 }).backgroundColor('#f5f5f5').fontColor('#666').borderRadius(4).onClick(() => this.openEdit(cat))
                   Button('🗑 删除').fontSize(10).height(26).padding({ left: 6, right: 6 }).backgroundColor('#fff').fontColor('#e74c3c').borderRadius(4).border({ width: 1, color: '#e74c3c' }).margin({ left: 4 }).onClick(() => this.deleteCategory(cat))
                 }.width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 }).border({ width: { bottom: 0.5 }, color: '#f5f5f5' })
-              })
+              }, (cat: Category): string => String(cat.id))
             }
           }.width('100%').backgroundColor('#fff').borderRadius(12).margin({ left: 16, right: 16, top: 12 })
 
@@ -186,7 +217,7 @@ struct SettingsPage {
                 .backgroundColor('#27ae60').fontColor('#fff').borderRadius(4)
                 .onClick(() => { this.newType = TransactionType.INCOME; this.newName = ''; this.newIcon = '💰'; this.showAddIconPicker = false; this.showAddDialog = true })
             }.width('100%').padding({ left: 16, right: 16, top: 10, bottom: this.incomeExpanded ? 4 : 10 })
-            if (this.incomeExpanded) {
+            if (this.incomeExpanded && this.grouped.length > 1) {
               ForEach(this.grouped[1].items, (cat: Category) => {
                 Row() {
                   Text(cat.icon).fontSize(18)
@@ -194,11 +225,12 @@ struct SettingsPage {
                   Button('✏️ 编辑').fontSize(10).height(26).padding({ left: 6, right: 6 }).backgroundColor('#f5f5f5').fontColor('#666').borderRadius(4).onClick(() => this.openEdit(cat))
                   Button('🗑 删除').fontSize(10).height(26).padding({ left: 6, right: 6 }).backgroundColor('#fff').fontColor('#e74c3c').borderRadius(4).border({ width: 1, color: '#e74c3c' }).margin({ left: 4 }).onClick(() => this.deleteCategory(cat))
                 }.width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 }).border({ width: { bottom: 0.5 }, color: '#f5f5f5' })
-              })
+              }, (cat: Category): string => String(cat.id))
             }
           }.width('100%').backgroundColor('#fff').borderRadius(12).margin({ left: 16, right: 16, top: 12 })
 
-          // === 数据导出 ===
+          // === 数据导出（仅登录用户可见）===
+          if (this.isLoggedIn) {
           Column() {
             Row() {
               Text('📎 数据导出').fontSize(16).fontWeight(FontWeight.Medium)
@@ -214,9 +246,10 @@ struct SettingsPage {
                   Button('📋 复制').fontSize(10).height(26).padding({ left: 8, right: 8 }).backgroundColor('#f5f5f5').fontColor('#666').borderRadius(4).margin({ left: 4 }).onClick(() => this.copyFile(f.path))
                   Button('🗑 删除').fontSize(10).height(26).padding({ left: 8, right: 8 }).backgroundColor('#fff').fontColor('#e74c3c').borderRadius(4).border({ width: 1, color: '#e74c3c' }).margin({ left: 4 }).onClick(() => this.deleteExportFile(f.path))
                 }.width('100%').padding({ left: 16, right: 8, top: 6, bottom: 6 }).border({ width: { top: 0.5 }, color: '#f0f0f0' })
-              })
+              }, (f: ExportFile): string => f.path)
             }
           }.width('100%').backgroundColor('#fff').borderRadius(12).margin({ left: 16, right: 16, top: 12 })
+          }
 
           // === 关于 ===
           Column() {
@@ -224,9 +257,8 @@ struct SettingsPage {
             Row() { Text('版本').fontSize(14).fontColor('#666').layoutWeight(1); Text('1.0.0').fontSize(14).fontColor('#333') }.width('100%').padding({ left: 16, right: 16, top: 8, bottom: 8 })
             Row() { Text('Phase').fontSize(14).fontColor('#666').layoutWeight(1); Text('2 — 统计看板').fontSize(14).fontColor('#333') }.width('100%').padding({ left: 16, right: 16, top: 8, bottom: 12 })
           }.width('100%').backgroundColor('#fff').borderRadius(12).margin({ left: 16, right: 16, top: 12, bottom: 24 })
-
-          Blank()
-        }.width('100%').layoutWeight(1).backgroundColor('#f5f5f5')
+        }.width('100%').justifyContent(FlexAlign.Start)
+        }.layoutWeight(1).scrollBar(BarState.Off).edgeEffect(EdgeEffect.None).backgroundColor('#fff').align(Alignment.Top)
       }.width('100%').height('100%')
 
       // === 添加品类弹窗 ===

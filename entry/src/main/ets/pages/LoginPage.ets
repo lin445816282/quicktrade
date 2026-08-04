@@ -101,7 +101,7 @@ struct LoginPage {
             Text('').height(40)
 
             Text('快记交易').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#27ae60').margin({ bottom: 8 })
-            Text('AI 语音记账').fontSize(14).fontColor('#999').margin({ bottom: 32 })
+            Text('AI 语音记账').fontSize(14).fontColor('#777').margin({ bottom: 32 })
 
             // === 华为帐号一键登录 ===
             Button() {
@@ -124,7 +124,7 @@ struct LoginPage {
             // === 分割线 ===
             Row() {
               Divider().width('30%')
-              Text('  或使用密码  ').fontSize(13).fontColor('#ccc')
+              Text('  或使用密码  ').fontSize(13).fontColor('#999')
               Divider().width('30%')
             }
             .width('100%')
@@ -150,7 +150,7 @@ struct LoginPage {
 
             // === 切换登录/注册 ===
             Row() {
-              Text(this.isRegister ? '已有账号？' : '没有账号？').fontSize(13).fontColor('#999')
+              Text(this.isRegister ? '已有账号？' : '没有账号？').fontSize(13).fontColor('#777')
               Text(this.isRegister ? '去登录' : '去注册').fontSize(13).fontColor('#27ae60')
                 .onClick(() => { this.isRegister = !this.isRegister })
             }
@@ -162,12 +162,12 @@ struct LoginPage {
             Row() {
               Text(this.agreed ? '☑' : '☐').fontSize(16).fontColor('#666')
                 .onClick(() => { this.agreed = !this.agreed })
-              Text(' 已阅读并同意 ').fontSize(12).fontColor('#999')
+              Text(' 已阅读并同意 ').fontSize(12).fontColor('#777')
                 .onClick(() => { this.agreed = !this.agreed })
               Text('隐私政策').fontSize(12).fontColor('#2d6be0')
                 .decoration({ type: TextDecorationType.Underline })
                 .onClick(() => { this.showPrivacyView('privacy') })
-              Text(' 和 ').fontSize(12).fontColor('#999')
+              Text(' 和 ').fontSize(12).fontColor('#777')
               Text('用户条款').fontSize(12).fontColor('#2d6be0')
                 .decoration({ type: TextDecorationType.Underline })
                 .onClick(() => { this.showPrivacyView('terms') })
@@ -178,7 +178,7 @@ struct LoginPage {
 
             // === 跳过，先看看 ===
             Text('跳过，先看看')
-              .fontSize(14).fontColor('#999')
+              .fontSize(14).fontColor('#777')
               .margin({ top: 24, bottom: 36 })
               .onClick(() => this.goAsGuest())
           }
