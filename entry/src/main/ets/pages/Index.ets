@@ -34,27 +34,16 @@ struct Index {
   @State loginAgreed: boolean = false
   @State showPrivacyContent: string = ''
   @State loggedIn: boolean = false
-
-  @State showDeleteDialog: boolean = false
-  @State deleteTargetId: number = 0
-  @State currentTime: string = ''
+  @State catIconMap: Record<string, string> = {}
 
   aboutToAppear() {
     this.loggedIn = AuthService.isLoggedIn()
-    this.updateTime()
     this.loadData()
   }
 
   onPageShow() {
     this.loggedIn = AuthService.isLoggedIn()
-    this.updateTime()
     this.loadData()
-  }
-
-  updateTime(): void {
-    const now = new Date()
-    const p = (n: number): string => String(n).padStart(2, '0')
-    this.currentTime = `${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())} ${p(now.getHours())}:${p(now.getMinutes())}`
   }
 
   async loadData() {
@@ -67,6 +56,8 @@ struct Index {
       this.todayIncome = summary.income
       this.todayExpense = summary.expense
       this.todayNet = NumberUtils.formatMoney(this.todayIncome - this.todayExpense)
+      // 加载品类图标缓存
+      this.catIconMap = await DatabaseService.getCategoryIconMap()
     } catch (e) {
       console.error('Index loadData failed:', JSON.stringify(e))
     }
@@ -191,16 +182,10 @@ struct Index {
       Column() {
         Row() {
           if (this.loggedIn) {
-            Text(`👤 ${AuthService.getCurrentUsername()}`).fontSize(13).fontColor('#666')
-            Blank()
-            // 金色边框日期时间
-            Text(this.currentTime).fontSize(12).fontColor('#333')
-              .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-              .border({ width: 1.5, color: '#d4a017', radius: 6 })
-              .margin({ right: 6 })
+            Text(`👤 ${AuthService.getCurrentUsername()}`).fontSize(13).fontColor('#666').layoutWeight(1)
             Text('退出').fontSize(13).fontColor('#e74c3c').onClick(() => this.logout())
           } else {
-            Text('👤 游客').fontSize(13).fontColor('#777').layoutWeight(1)
+            Text('👤 游客').fontSize(13).fontColor('#999').layoutWeight(1)
             Text('登录').fontSize(13).fontColor('#27ae60').fontWeight(FontWeight.Medium)
               .padding({ left: 12, right: 4, top: 4, bottom: 4 })
               .onClick(() => { this.openLogin() })
@@ -210,11 +195,11 @@ struct Index {
         .backgroundColor('#fff').border({ width: { bottom: 0.5 }, color: '#f0f0f0' })
 
         Row() {
-          Column() { Text('今日支出').fontSize(12).fontColor('#777')
+          Column() { Text('今日支出').fontSize(12).fontColor('#999')
             Text(NumberUtils.formatMoney(this.todayExpense)).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#e74c3c') }
-          Column() { Text('今日收入').fontSize(12).fontColor('#777')
+          Column() { Text('今日收入').fontSize(12).fontColor('#999')
             Text(NumberUtils.formatMoney(this.todayIncome)).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#27ae60') }
-          Column() { Text('今日净额').fontSize(12).fontColor('#777')
+          Column() { Text('今日净额').fontSize(12).fontColor('#999')
             Text(this.todayNet).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#333') }
         }
         .width('100%').justifyContent(FlexAlign.SpaceAround).padding({ top: 16, bottom: 16 })
@@ -225,15 +210,15 @@ struct Index {
         } else if (this.groups.length === 0) {
           Column() {
             Text('📝').fontSize(48).margin({ bottom: 12 })
-            Text('还没有记录').fontSize(16).fontColor('#777')
-            Text('点击下方 + 号开始记账').fontSize(14).fontColor('#999').margin({ top: 4 })
+            Text('还没有记录').fontSize(16).fontColor('#999')
+            Text('点击下方 + 号开始记账').fontSize(14).fontColor('#ccc').margin({ top: 4 })
           }.width('100%').margin({ top: 60 })
         } else {
           List() {
             ForEach(this.groups, (group: TransactionGroup) => {
               ListItem() {
                 Column() {
-                  Text(group.label).fontSize(13).fontColor('#777')
+                  Text(group.label).fontSize(13).fontColor('#999')
                     .padding({ left: 16, top: 12, bottom: 4 }).width('100%')
                   ForEach(group.items, (item: Transaction) => {
                     ListItem() { this.TransactionItem(item) }
@@ -307,31 +292,6 @@ struct Index {
         .width('100%').justifyContent(FlexAlign.Center)
       }
 
-      // 删除确认弹窗
-      if (this.showDeleteDialog) {
-        Column() {}.width('100%').height('100%').backgroundColor('#00000040')
-        Column() {
-          Column() {
-            Text('⚠️ 确认删除').fontSize(17).fontWeight(FontWeight.Bold).margin({ bottom: 12 })
-            Text('删除后无法恢复，确定要删除这条记录吗？').fontSize(14).fontColor('#666').margin({ bottom: 20 })
-            Row() {
-              Button('取消').fontSize(14).height(40).layoutWeight(1)
-                .backgroundColor('#f0f0f0').fontColor('#666').borderRadius(8)
-                .onClick((): void => { this.showDeleteDialog = false })
-              Button('删除').fontSize(14).height(40).layoutWeight(1)
-                .backgroundColor('#e74c3c').fontColor('#fff').borderRadius(8)
-                .margin({ left: 12 })
-                .onClick((): void => {
-                  this.showDeleteDialog = false
-                  this.deleteTransaction(this.deleteTargetId)
-                })
-            }.width('100%')
-          }
-          .width('80%').padding(24).backgroundColor('#fff').borderRadius(16)
-        }
-        .width('100%').justifyContent(FlexAlign.Center)
-      }
-
       if (this.showPrivacyContent !== '') {
         Column() {}.width('100%').height('100%').backgroundColor('#00000050')
           .onClick(() => { this.showPrivacyContent = '' })
@@ -384,26 +344,20 @@ struct Index {
       }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 8 })
       Text(item.amountDisplay).fontSize(18).fontWeight(FontWeight.Medium)
         .fontColor(item.isIncome ? '#27ae60' : '#333')
-      Text('🗑️').fontSize(14).fontColor('#e74c3c')
-        .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-        .border({ width: 1, color: '#e74c3c', radius: 6 })
-        .onClick((): void => {
-          this.deleteTargetId = item.id
-          this.showDeleteDialog = true
-        })
     }
     .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 12 }).backgroundColor('#fff')
     .border({ width: { bottom: 0.5 }, color: '#f0f0f0' })
+    .gesture(LongPressGesture({ duration: 500 }).onAction(() => {
+      AlertDialog.show({
+        title: '删除确认', message: '确定要删除这条记录吗？', autoCancel: true,
+        primaryButton: { value: '取消', action: () => {} },
+        secondaryButton: { value: '删除', fontColor: '#e74c3c', action: () => this.deleteTransaction(item.id) }
+      })
+    }))
   }
 
   getCategoryIcon(item: Transaction): string {
-    const iconMap: Record<string, string> = {
-      '餐饮': '🍜', '交通': '🚗', '购物': '🛍️', '日用品': '🧴',
-      '娱乐': '🎮', '通讯': '📱', '居住': '🏠', '医疗': '💊',
-      '教育': '📚', '工资': '💵', '投资': '📈', '兼职': '💼',
-      '退款': '↩️', '其他': '📌'
-    }
-    return iconMap[item.category] || '📌'
+    return this.catIconMap[item.category] || '📌'
   }
 }
 
